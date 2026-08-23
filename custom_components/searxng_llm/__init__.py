@@ -26,7 +26,7 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import CONF_QUERY, DOMAIN, SERVICE_SEARCH
+from .const import CONF_QUERY, DOMAIN, EMPTY_RESULTS_MESSAGE, SERVICE_SEARCH
 from .llm import execute_search, setup_api
 
 _LOGGER = logging.getLogger(__name__)
@@ -80,6 +80,6 @@ async def _handle_search(call: ServiceCall) -> ServiceResponse | None:
         return {
             "query": query,
             "results": [],
-            "message": "SearXNG 没有返回相关结果。",
+            "message": EMPTY_RESULTS_MESSAGE,
         }
     return {"query": query, "results": items}

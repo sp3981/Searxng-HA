@@ -143,6 +143,7 @@ response_variable: result
 | 提示「未启用 JSON 输出」（HTTP 403 / 非 JSON 响应） | `settings.yml` 的 `search.formats` 缺少 `json`，加入后重启 SearXNG |
 | 工具不出现 / 模型不调用 | 确认 HA ≥ 2024.6、已重启、对话代理基于 LLM 且工具已启用；查看 `home-assistant.log` |
 | 用 Extended OpenAI Conversation 时模型从不搜索 | EOC 不消费 HA LLM 工具 API，请按「使用方法 → Extended OpenAI Conversation」在 Functions YAML 里追加 `searxng_search` 函数 |
+| 模型回复「没有返回任何结果」 | SearXNG 实例对该查询返回了 0 条结果（常见原因：实例引擎超时/不可用/被限流）。先在本机 curl `实例地址/search?q=test&format=json` 验证实例是否正常返回 results，再调大集成的「超时时间」，并查看 `home-assistant.log` 里「SearXNG 搜索完成」日志的耗时与条数 |
 | HA 2026.8+ 的官方代理里看不到工具 | 在代理配置里把 LLM API（`llm_hass_api`）设为 **Assist**；确认本集成已添加且配置连通性测试通过 |
 | 运行中 SearXNG 挂了 | 对话中会收到中文错误说明（如「无法连接 SearXNG……」），HA 不会崩溃；SearXNG 恢复后自动继续可用 |
 

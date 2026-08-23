@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -35,6 +36,7 @@ from .const import (
     DEFAULT_RESULTS,
     DEFAULT_TIMEOUT,
     DOMAIN,
+    EMPTY_RESULTS_MESSAGE,
     TOOL_DESCRIPTION,
     TOOL_NAME,
 )
@@ -108,9 +110,10 @@ async def execute_search(
     if not base_url:
         raise HomeAssistantError("尚未配置 SearXNG 地址，请先在集成设置中填写。")
     results, timeout = _parse_settings(config)
+    started = time.monotonic()
 
     try:
-        return await search(
+        items = await search(
             async_get_clientsession(hass),
             base_url,
             query,
@@ -120,11 +123,26 @@ async def execute_search(
             timeout=timeout,
         )
     except SearxngError as err:
-        _LOGGER.warning("SearXNG 搜索失败：%s", err)
+        _LOGGER.warning(
+            "SearXNG 搜索失败（耗时 %.1f 秒）：%s",
+            time.monotonic() - started,
+            err,
+        )
         raise HomeAssistantError(str(err)) from err
     except Exception as err:  # 兜底：未知异常也转为友好提示，保证不崩溃
-        _LOGGER.exception("SearXNG 搜索发生未知错误")
+        _LOGGER.exception(
+            "SearXNG 搜索发生未知错误（耗时 %.1f 秒）",
+            time.monotonic() - started,
+        )
         raise HomeAssistantError(f"搜索时发生内部错误：{err}") from err
+
+    _LOGGER.debug(
+        "SearXNG 搜索完成：query=%r 耗时=%.1f 秒 结果=%d 条",
+        query,
+        time.monotonic() - started,
+        len(items),
+    )
+    return items
 
 
 if NEW_STYLE:
@@ -153,7 +171,7 @@ if NEW_STYLE:
                 return {
                     "query": query,
                     "results": [],
-                    "message": "SearXNG 没有返回相关结果。",
+                    "message": EMPTY_RESULTS_MESSAGE,
                 }
             return {"query": query, "results": items}
 
@@ -242,7 +260,7 @@ else:  # 经典架构（HA 2026.8 之前）
                     {
                         "query": query,
                         "results": [],
-                        "message": "SearXNG 没有返回相关结果。",
+                        "message": EMPTY_RESULTS_MESSAGE,
                     }
                 )
             return llm.ToolResult({"query": query, "results": items})

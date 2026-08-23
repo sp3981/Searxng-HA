@@ -46,3 +46,11 @@ KNOWN_ERROR_CODES = frozenset(
 
 # 配置向导连通性测试使用的关键词（允许零结果，只用于验证协议可用）
 TEST_QUERY = "home assistant connectivity test"
+
+
+# SearXNG 返回 0 条结果时给模型/用户的提示（三种调用路径共用）
+EMPTY_RESULTS_MESSAGE = (
+    "SearXNG 没有返回任何结果。可能原因：实例引擎超时或不可用、查询无匹配或被限流；"
+    "可尝试调大集成的「超时时间」、更换关键词，或直接在浏览器打开实例的 "
+    "/search?q=test&format=json 地址检查实例是否正常。"
+)
