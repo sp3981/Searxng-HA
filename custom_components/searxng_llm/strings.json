@@ -1,0 +1,56 @@
+{
+  "title": "SearXNG 联网搜索",
+  "config": {
+    "step": {
+      "user": {
+        "title": "配置 SearXNG",
+        "description": "将已有的 SearXNG 实例接入 Home Assistant，为基于大模型的对话代理提供联网搜索工具。\n\n前提：SearXNG 需启用 JSON 输出（settings.yml 的 search.formats 中包含 json）。",
+        "data": {
+          "base_url": "SearXNG 地址",
+          "username": "用户名（可选）",
+          "password": "密码（可选）",
+          "results": "返回结果条数",
+          "timeout": "超时时间（秒）"
+        },
+        "data_description": {
+          "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "无法连接 SearXNG，请检查地址、网络以及服务是否正常运行。",
+      "invalid_auth": "认证失败：SearXNG 拒绝了用户名/密码（HTTP 401/403）。",
+      "json_format_disabled": "SearXNG 未启用 JSON 输出：请在 settings.yml 的 search.formats 中加入 json 并重启。",
+      "invalid_response": "SearXNG 返回了无法识别的数据或错误状态码，请确认地址是 SearXNG 实例的根地址。",
+      "invalid_url": "地址必须以 http:// 或 https:// 开头。"
+    },
+    "abort": {
+      "already_configured": "该 SearXNG 地址已经配置过了。"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "配置 SearXNG",
+        "description": "修改 SearXNG 连接参数。保存时会重新进行连通性测试。",
+        "data": {
+          "base_url": "SearXNG 地址",
+          "username": "用户名（可选）",
+          "password": "密码（可选）",
+          "results": "返回结果条数",
+          "timeout": "超时时间（秒）"
+        },
+        "data_description": {
+          "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "无法连接 SearXNG，请检查地址、网络以及服务是否正常运行。",
+      "invalid_auth": "认证失败：SearXNG 拒绝了用户名/密码（HTTP 401/403）。",
+      "json_format_disabled": "SearXNG 未启用 JSON 输出：请在 settings.yml 的 search.formats 中加入 json 并重启。",
+      "invalid_response": "SearXNG 返回了无法识别的数据或错误状态码，请确认地址是 SearXNG 实例的根地址。",
+      "invalid_url": "地址必须以 http:// 或 https:// 开头。"
+    }
+  }
+}

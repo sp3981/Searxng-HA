@@ -1,0 +1,43 @@
+"""SearXNG 联网搜索集成的常量定义。"""
+
+from __future__ import annotations
+
+DOMAIN = "searxng_llm"
+NAME = "SearXNG 联网搜索"
+API_NAME = "SearXNG 联网搜索"
+
+CONF_BASE_URL = "base_url"
+CONF_USERNAME = "username"
+CONF_PASSWORD = "password"
+CONF_RESULTS = "results"
+CONF_TIMEOUT = "timeout"
+
+DEFAULT_RESULTS = 5
+DEFAULT_TIMEOUT = 15
+
+# LLM 工具的名称与描述（描述会直接交给大模型，引导模型在需要实时信息时调用）
+TOOL_NAME = "searxng_search"
+TOOL_DESCRIPTION = (
+    "使用 SearXNG 元搜索引擎在互联网上搜索实时信息，"
+    "返回与关键词相关网页的标题、链接和内容摘要。"
+    "当用户的问题涉及最新资讯、实时数据、新闻或需要联网验证的信息时，"
+    "应调用此工具获取最新资料。"
+)
+
+# SearxngError 错误码，与 strings.json 中 error 段落的键名一一对应
+ERROR_CANNOT_CONNECT = "cannot_connect"
+ERROR_INVALID_AUTH = "invalid_auth"
+ERROR_JSON_DISABLED = "json_format_disabled"
+ERROR_INVALID_RESPONSE = "invalid_response"
+
+KNOWN_ERROR_CODES = frozenset(
+    {
+        ERROR_CANNOT_CONNECT,
+        ERROR_INVALID_AUTH,
+        ERROR_JSON_DISABLED,
+        ERROR_INVALID_RESPONSE,
+    }
+)
+
+# 配置向导连通性测试使用的关键词（允许零结果，只用于验证协议可用）
+TEST_QUERY = "home assistant connectivity test"
