@@ -40,6 +40,8 @@ _vol.Schema = _Schema
 _vol.Required = _marker
 _vol.Optional = _marker
 _vol.All = lambda *args: args[0] if args else None
+_vol.Any = lambda *args: args[0] if args else None
+_vol.Length = lambda **kwargs: (lambda value: value)
 _vol.Coerce = lambda fn: fn
 _vol.Range = lambda **kwargs: (lambda value: value)
 sys.modules["voluptuous"] = _vol
@@ -281,18 +283,27 @@ class FakeResponse:
             raise ValueError("响应不是合法的 JSON")
         return self._payload
 
+    async def text(self, errors: str | None = None) -> str:
+        """返回 payload 的文本形式。"""
+        del errors
+        return str(self._payload)
+
 
 class FakeSession:
-    """记录请求参数的假会话。"""
+    """记录请求参数的假会话；可给多个响应按顺序回放。"""
 
-    def __init__(self, response: FakeResponse) -> None:
-        self.response = response
+    def __init__(self, response: FakeResponse | list[FakeResponse]) -> None:
+        self._queue: list[FakeResponse] = (
+            list(response) if isinstance(response, list) else [response]
+        )
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def get(self, url: str, **kwargs: Any) -> FakeResponse:
-        """记录调用并返回预设响应。"""
+        """记录调用并返回队列中下一个响应（耗尽后复用最后一个）。"""
         self.calls.append((url, kwargs))
-        return self.response
+        if len(self._queue) > 1:
+            return self._queue.pop(0)
+        return self._queue[0]
 
 
 class BrokenSession:

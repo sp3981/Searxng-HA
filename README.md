@@ -8,6 +8,8 @@
 - 遵循 Home Assistant 官方 **LLM 工具 API**：HA 2026.8+ 使用新版 **LLM 平台协议**（模块级 `async_get_tools` 自动聚合进 Assist API），HA 2024.6–2026.7 使用经典 `llm.API` 注册方式，两代架构自动适配；
 - 额外提供 **`searxng_llm.search` 服务**，供 Extended OpenAI Conversation 等不消费 HA LLM 工具 API 的对话代理经 script 函数接入（见下文）；
 - 工具内部调用 SearXNG 的 JSON 接口 `/search?q=...&format=json`，取前 N 条结果的**标题、链接、摘要**返回给模型；
+- **搜索后自动抓取网页正文**：对前若干条结果并行抓取网页内容（HTML 自动转纯文本、截断），模型回答时可引用网页实际内容而不只是摘要；
+- **并行搜索**：`searxng_llm.search` 服务支持一次传多个关键词并行搜索，搜索/抓取并发上限均可在配置中设置；
 - SearXNG 地址、可选用户名/密码（HTTP Basic Auth）、搜索语言、返回条数、超时时间全部通过**界面配置**，不硬编码；
 - 全程异步（aiohttp），**零第三方依赖**；
 - 任何失败都抛出标准异常（`llm.ToolError` / `HomeAssistantError`），给出友好中文提示，绝不导致 Home Assistant 崩溃。
@@ -58,7 +60,11 @@
 | 密码 | HTTP Basic Auth 密码（可选） | 空 |
 | 搜索语言 | SearXNG 的 `language` 参数：`auto`=自动识别查询语言，`all`=全部语言，也可填语言代码（`zh-CN`/`zh`/`en-US`/`en` 等） | auto |
 | 返回结果条数 | 每次搜索返回给模型的结果数（1–20） | 5 |
-| 超时时间 | 请求超时秒数（3–60） | 15 |
+| 超时时间 | 搜索请求超时秒数（3–60） | 15 |
+| 并行搜索数量 | 同时向 SearXNG 发起的搜索请求上限（1–10） | 3 |
+| 抓取结果条数 | 每条搜索结果中自动抓取网页正文的前几条（0=不抓取，1–10） | 3 |
+| 并行抓取数量 | 同时抓取网页的数量上限（1–10） | 5 |
+| 抓取超时时间 | 单个网页抓取的超时秒数（3–60） | 20 |
 
 保存时会立即执行一次连通性测试：地址不通、认证失败或未启用 JSON 输出都会给出
 明确的中文提示，修正后重试即可。
@@ -80,7 +86,7 @@
 - “帮我搜索一下今天的北京天气”
 - “DeepSeek 有什么最新消息？”
 
-模型收到的是结构化结果（查询词 + 前 N 条 `标题/链接/摘要`），会自然融入最终回答。
+模型收到的是结构化结果（查询词 + 前 N 条 `标题/链接/摘要`，启用抓取时每条另含 `fetched_content` 网页正文），会自然融入最终回答。
 
 ### Extended OpenAI Conversation（EOC）
 
@@ -133,9 +139,21 @@ data:
 response_variable: result
 ```
 
-服务返回 `{"query": ..., "results": [{"title", "url", "content"}, ...]}`；
-无结果时额外带 `"message"` 字段。任何对话代理只要能执行 HA 服务并读取
-`response_variable`，都可以用这种方式接入联网搜索。
+服务返回 `{"query": ..., "results": [{"title", "url", "content", "fetched_content", ...}, ...]}`；
+无结果时额外带 `"message"` 字段。`query` 也可以传**列表**，一次并行搜索多个关键词
+（返回合并去重后的 `results` 和逐关键词的 `searches` 明细）：
+
+```yaml
+action: searxng_llm.search
+data:
+  query:
+    - 今日新闻
+    - 天气预报
+  language: zh-CN
+response_variable: result
+```
+
+任何对话代理只要能执行 HA 服务并读取 `response_variable`，都可以用这种方式接入联网搜索。
 
 ## 故障排查
 
@@ -148,6 +166,8 @@ response_variable: result
 | 用 Extended OpenAI Conversation 时模型从不搜索 | EOC 不消费 HA LLM 工具 API，请按「使用方法 → Extended OpenAI Conversation」在 Functions YAML 里追加 `searxng_search` 函数 |
 | 模型回复「没有返回任何结果」 | SearXNG 实例对该查询返回了 0 条结果（常见原因：实例引擎超时/不可用/被限流）。先在本机 curl `实例地址/search?q=test&format=json` 验证实例是否正常返回 results，再调大集成的「超时时间」，并查看 `home-assistant.log` 里「SearXNG 搜索完成」日志的耗时与条数 |
 | HA 2026.8+ 的官方代理里看不到工具 | 在代理配置里把 LLM API（`llm_hass_api`）设为 **Assist**；确认本集成已添加且配置连通性测试通过 |
+| 集成卡片点「配置」看不到地址/超时等选项 | 更新到 v1.2.1（修复了缺失 options flow 入口的问题）；旧版本请经 HACS 重新下载覆盖后重启 |
+| 模型没看到网页正文 | 检查「抓取结果条数」是否为 0；单页抓取失败会写入 `fetch_error` 字段，可在日志中搜索「SearXNG 网页抓取完成」查看成功/失败条数 |
 | 运行中 SearXNG 挂了 | 对话中会收到中文错误说明（如「无法连接 SearXNG……」），HA 不会崩溃；SearXNG 恢复后自动继续可用 |
 
 ## 工作原理

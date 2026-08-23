@@ -12,6 +12,10 @@ CONF_PASSWORD = "password"
 CONF_RESULTS = "results"
 CONF_TIMEOUT = "timeout"
 CONF_LANGUAGE = "language"
+CONF_SEARCH_PARALLEL = "search_parallel"
+CONF_FETCH_COUNT = "fetch_count"
+CONF_FETCH_PARALLEL = "fetch_parallel"
+CONF_FETCH_TIMEOUT = "fetch_timeout"
 CONF_QUERY = "query"
 
 # 服务名：searxng_llm.search，供 Extended OpenAI Conversation 等
@@ -24,6 +28,13 @@ DEFAULT_TIMEOUT = 15
 # SearXNG /search 接口的 language 参数：auto=自动识别查询语言，
 # all=全部语言，也可以填具体语言代码，如 zh-CN、zh、en-US、en
 DEFAULT_LANGUAGE = "auto"
+DEFAULT_SEARCH_PARALLEL = 3
+DEFAULT_FETCH_COUNT = 3
+DEFAULT_FETCH_PARALLEL = 5
+DEFAULT_FETCH_TIMEOUT = 20
+
+# 抓取网页正文返回给模型的单页最大字符数（超出截断）
+DEFAULT_FETCH_CHARS = 1500
 
 # LLM 工具的名称与描述（描述会直接交给大模型，引导模型在需要实时信息时调用）
 TOOL_NAME = "searxng_search"

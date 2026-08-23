@@ -16,6 +16,9 @@ from stubs import (
 from custom_components.searxng_llm import llm as component_llm
 from custom_components.searxng_llm.const import (
     CONF_BASE_URL,
+    CONF_FETCH_COUNT,
+    CONF_FETCH_PARALLEL,
+    CONF_FETCH_TIMEOUT,
     CONF_LANGUAGE,
     CONF_RESULTS,
     CONF_TIMEOUT,
@@ -31,6 +34,7 @@ def _make_api(data=None):
         CONF_RESULTS: 3,
         CONF_TIMEOUT: 10,
         CONF_LANGUAGE: "auto",
+        CONF_FETCH_COUNT: 0,
         "username": "",
         "password": "",
     }
@@ -86,6 +90,58 @@ class SearxngLLMTests(unittest.IsolatedAsyncioTestCase):
         tool = (await instance.async_get_tools())[0]
         await tool.llm_func({"query": "天气"})
         self.assertEqual(session.calls[0][1]["params"]["language"], "zh-CN")
+
+    async def test_fetch_content_attached_when_enabled(self):
+        """fetch_count>0 时并行抓取前 N 条网页正文。"""
+        html_page = "<html><body><p>网页正文内容。</p></body></html>"
+        session = FakeSession(
+            [
+                FakeResponse(
+                    200,
+                    {
+                        "results": [
+                            {"title": "甲", "url": "https://a.example", "content": "摘要1"},
+                            {"title": "乙", "url": "https://b.example", "content": "摘要2"},
+                        ]
+                    },
+                ),
+                FakeResponse(200, html_page, "text/html"),
+                FakeResponse(200, html_page, "text/html"),
+            ]
+        )
+        set_session(session)
+        api = _make_api(
+            {
+                CONF_FETCH_COUNT: 2,
+                CONF_FETCH_PARALLEL: 2,
+                CONF_FETCH_TIMEOUT: 10,
+            }
+        )
+        instance = await api.async_get_api_instance(LLMContext())
+        tool = (await instance.async_get_tools())[0]
+        result = await tool.llm_func({"query": "天气"})
+        items = result.serialized_result["results"]
+        self.assertEqual(items[0]["fetched_content"], "网页正文内容。")
+        self.assertEqual(items[1]["fetched_content"], "网页正文内容。")
+        self.assertEqual(len(session.calls), 3)
+
+    async def test_fetch_failure_attaches_error_without_crashing(self):
+        """单条抓取失败写入 fetch_error，搜索本身不失败。"""
+        session = FakeSession(
+            [
+                FakeResponse(
+                    200,
+                    {"results": [{"title": "甲", "url": "https://a.example", "content": "x"}]},
+                ),
+                FakeResponse(403, "Forbidden", "text/html"),
+            ]
+        )
+        set_session(session)
+        api = _make_api({CONF_FETCH_COUNT: 1, CONF_FETCH_PARALLEL: 1, CONF_FETCH_TIMEOUT: 10})
+        instance = await api.async_get_api_instance(LLMContext())
+        tool = (await instance.async_get_tools())[0]
+        result = await tool.llm_func({"query": "天气"})
+        self.assertIn("fetch_error", result.serialized_result["results"][0])
 
     async def test_connection_failure_raises_tool_error_in_chinese(self):
         """SearXNG 不可用时抛 ToolError，给出中文提示（系统不崩溃）。"""

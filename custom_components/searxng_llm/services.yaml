@@ -4,7 +4,7 @@ search:
   fields:
     query:
       name: 搜索关键词
-      description: 要搜索的关键词或问题。
+      description: 要搜索的关键词或问题；也可传列表，一次并行搜索多个关键词（并发受集成「并行搜索数量」限制）。
       required: true
       example: home assistant 最新版本
       selector:

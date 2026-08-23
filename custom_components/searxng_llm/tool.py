@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import html
 import logging
+import re
 from typing import Any
 
 import aiohttp
 
 from .const import (
+    DEFAULT_FETCH_CHARS,
     DEFAULT_LANGUAGE,
     DEFAULT_RESULTS,
     DEFAULT_TIMEOUT,
@@ -146,3 +149,76 @@ async def search(
             }
         )
     return items
+
+_SCRIPT_RE = re.compile(
+    r"<(script|style|noscript|template)\b[^>]*>.*?</\1>",
+    re.IGNORECASE | re.DOTALL,
+)
+_HEAD_RE = re.compile(r"<head\b[^>]*>.*?</head>", re.IGNORECASE | re.DOTALL)
+_TAG_RE = re.compile(r"<[^>]+>")
+_WS_RE = re.compile(r"\s+")
+
+
+def _extract_text(html_text: str) -> str:
+    """从 HTML 提取纯文本正文（去掉脚本/样式/标签，压缩空白）。"""
+    text = _SCRIPT_RE.sub(" ", html_text)
+    text = _HEAD_RE.sub(" ", text)
+    text = _TAG_RE.sub(" ", text)
+    text = html.unescape(text)
+    return _WS_RE.sub(" ", text).strip()
+
+
+async def fetch_url(
+    session: aiohttp.ClientSession,
+    url: str,
+    *,
+    timeout: int = DEFAULT_TIMEOUT,
+    max_chars: int = DEFAULT_FETCH_CHARS,
+) -> str:
+    """抓取网页正文，返回截断后的纯文本（供搜索结果附加正文内容）。
+
+    HTML 页面会提取纯文本；其它内容类型直接按文本截断。
+    连接失败、超时、HTTP 错误抛出 :class:`SearxngError`。
+    """
+    headers = {
+        "Accept": "text/html,text/plain;q=0.9,*/*;q=0.8",
+        "User-Agent": USER_AGENT,
+    }
+    try:
+        async with session.get(
+            url,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=timeout),
+        ) as response:
+            if response.status >= 400:
+                raise SearxngError(
+                    f"网页返回 HTTP {response.status}，无法抓取内容。",
+                    code=ERROR_INVALID_RESPONSE,
+                )
+            content_type = (response.headers or {}).get("Content-Type", "")
+            text = await response.text(errors="replace")
+    except SearxngError:
+        raise
+    except asyncio.TimeoutError as err:
+        raise SearxngError(
+            "抓取网页超时，请检查网络或调大「抓取超时时间」。",
+            code=ERROR_CANNOT_CONNECT,
+        ) from err
+    except aiohttp.ClientError as err:
+        raise SearxngError(
+            "无法抓取网页内容，请检查网络。",
+            code=ERROR_CANNOT_CONNECT,
+        ) from err
+
+    head = text[:512].lower()
+    if (
+        "html" in content_type.lower()
+        or "<html" in head
+        or "<body" in head
+        or "<div" in head
+    ):
+        text = _extract_text(text)
+    else:
+        text = _WS_RE.sub(" ", text).strip()
+    return text[:max_chars]
+

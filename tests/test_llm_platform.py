@@ -25,6 +25,7 @@ from stubs import (
 
 from custom_components.searxng_llm.const import (
     CONF_BASE_URL,
+    CONF_FETCH_COUNT,
     CONF_LANGUAGE,
     CONF_RESULTS,
     CONF_TIMEOUT,
@@ -59,6 +60,7 @@ def _entry_with_base_url(base_url: str) -> ConfigEntry:
         CONF_RESULTS: 3,
         CONF_TIMEOUT: 10,
         CONF_LANGUAGE: "auto",
+        CONF_FETCH_COUNT: 0,
         "username": "",
         "password": "",
     }
@@ -136,6 +138,29 @@ class SearxngPlatformTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["results"], [])
         self.assertEqual(session.calls[0][1]["params"]["language"], "zh")
+
+    async def test_tool_call_fetches_webpage_content(self):
+        """新架构工具同样按配置抓取网页正文。"""
+        html_page = "<html><body><p>正文。</p></body></html>"
+        session = FakeSession(
+            [
+                FakeResponse(
+                    200,
+                    {"results": [{"title": "甲", "url": "https://a.example", "content": "x"}]},
+                ),
+                FakeResponse(200, html_page, "text/html"),
+            ]
+        )
+        set_session(session)
+        entry = _entry_with_base_url("https://searx.example.com")
+        entry.data[CONF_FETCH_COUNT] = 1
+        tool = self.module.SearxngSearchTool()
+        result = await tool.async_call(
+            _FakeHass([entry]),
+            NewStyleToolInput(TOOL_NAME, {"query": "新闻"}),
+            NewStyleLLMContext(),
+        )
+        self.assertEqual(result["results"][0]["fetched_content"], "正文。")
 
     async def test_tool_call_connection_failure_raises_chinese_error(self):
         """SearXNG 不可用时抛中文 HomeAssistantError。"""

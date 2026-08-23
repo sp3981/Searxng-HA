@@ -9,20 +9,33 @@ from urllib.parse import urlparse
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_BASE_URL,
+    CONF_FETCH_COUNT,
+    CONF_FETCH_PARALLEL,
+    CONF_FETCH_TIMEOUT,
     CONF_LANGUAGE,
     CONF_PASSWORD,
     CONF_RESULTS,
+    CONF_SEARCH_PARALLEL,
     CONF_TIMEOUT,
     CONF_USERNAME,
+    DEFAULT_FETCH_COUNT,
+    DEFAULT_FETCH_PARALLEL,
+    DEFAULT_FETCH_TIMEOUT,
     DEFAULT_LANGUAGE,
     DEFAULT_RESULTS,
+    DEFAULT_SEARCH_PARALLEL,
     DEFAULT_TIMEOUT,
     DOMAIN,
     ERROR_CANNOT_CONNECT,
@@ -77,6 +90,22 @@ def _build_schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=20)),
             vol.Required(
                 CONF_TIMEOUT, default=values.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+            ): vol.All(vol.Coerce(int), vol.Range(min=3, max=60)),
+            vol.Required(
+                CONF_SEARCH_PARALLEL,
+                default=values.get(CONF_SEARCH_PARALLEL, DEFAULT_SEARCH_PARALLEL),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=10)),
+            vol.Required(
+                CONF_FETCH_COUNT,
+                default=values.get(CONF_FETCH_COUNT, DEFAULT_FETCH_COUNT),
+            ): vol.All(vol.Coerce(int), vol.Range(min=0, max=10)),
+            vol.Required(
+                CONF_FETCH_PARALLEL,
+                default=values.get(CONF_FETCH_PARALLEL, DEFAULT_FETCH_PARALLEL),
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=10)),
+            vol.Required(
+                CONF_FETCH_TIMEOUT,
+                default=values.get(CONF_FETCH_TIMEOUT, DEFAULT_FETCH_TIMEOUT),
             ): vol.All(vol.Coerce(int), vol.Range(min=3, max=60)),
         }
     )
@@ -144,6 +173,24 @@ class SearxngConfigFlow(ConfigFlow, domain=DOMAIN):
                                 user_input.get(CONF_LANGUAGE) or ""
                             ).strip()
                             or DEFAULT_LANGUAGE,
+                            CONF_SEARCH_PARALLEL: int(
+                                user_input.get(
+                                    CONF_SEARCH_PARALLEL, DEFAULT_SEARCH_PARALLEL
+                                )
+                            ),
+                            CONF_FETCH_COUNT: int(
+                                user_input.get(CONF_FETCH_COUNT, DEFAULT_FETCH_COUNT)
+                            ),
+                            CONF_FETCH_PARALLEL: int(
+                                user_input.get(
+                                    CONF_FETCH_PARALLEL, DEFAULT_FETCH_PARALLEL
+                                )
+                            ),
+                            CONF_FETCH_TIMEOUT: int(
+                                user_input.get(
+                                    CONF_FETCH_TIMEOUT, DEFAULT_FETCH_TIMEOUT
+                                )
+                            ),
                         },
                     )
         return self.async_show_form(
@@ -181,3 +228,12 @@ class SearxngOptionsFlow(OptionsFlow):
             ),
             errors=errors,
         )
+
+
+async def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+    """返回选项流：让「集成 → 配置」能打开可修改的连接参数表单。
+
+    没有该入口时，HA 点「配置」拿不到 options flow，
+    地址/超时/语言等参数只有首次添加时才能填。
+    """
+    return SearxngOptionsFlow(config_entry)

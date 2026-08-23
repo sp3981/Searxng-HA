@@ -11,11 +11,19 @@
           "password": "密码（可选）",
           "language": "搜索语言",
           "results": "返回结果条数",
-          "timeout": "超时时间（秒）"
+          "timeout": "超时时间（秒）",
+          "search_parallel": "并行搜索数量",
+          "fetch_count": "抓取结果条数",
+          "fetch_parallel": "并行抓取数量",
+          "fetch_timeout": "抓取超时时间（秒）"
         },
         "data_description": {
           "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。",
-          "language": "SearXNG 的 language 参数：auto=自动识别查询语言、all=全部语言，也可填语言代码，如 zh-CN、zh、en-US、en。"
+          "language": "SearXNG 的 language 参数：auto=自动识别查询语言、all=全部语言，也可填语言代码，如 zh-CN、zh、en-US、en。",
+          "search_parallel": "同时向 SearXNG 发起的搜索请求上限（1–10）。",
+          "fetch_count": "每条搜索结果中自动抓取网页正文的前几条（0=不抓取，1–10）。",
+          "fetch_parallel": "同时抓取网页的数量上限（1–10）。",
+          "fetch_timeout": "单个网页抓取的超时秒数（3–60）。"
         }
       }
     },
@@ -41,11 +49,19 @@
           "password": "密码（可选）",
           "language": "搜索语言",
           "results": "返回结果条数",
-          "timeout": "超时时间（秒）"
+          "timeout": "超时时间（秒）",
+          "search_parallel": "并行搜索数量",
+          "fetch_count": "抓取结果条数",
+          "fetch_parallel": "并行抓取数量",
+          "fetch_timeout": "抓取超时时间（秒）"
         },
         "data_description": {
           "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。",
-          "language": "SearXNG 的 language 参数：auto=自动识别查询语言、all=全部语言，也可填语言代码，如 zh-CN、zh、en-US、en。"
+          "language": "SearXNG 的 language 参数：auto=自动识别查询语言、all=全部语言，也可填语言代码，如 zh-CN、zh、en-US、en。",
+          "search_parallel": "同时向 SearXNG 发起的搜索请求上限（1–10）。",
+          "fetch_count": "每条搜索结果中自动抓取网页正文的前几条（0=不抓取，1–10）。",
+          "fetch_parallel": "同时抓取网页的数量上限（1–10）。",
+          "fetch_timeout": "单个网页抓取的超时秒数（3–60）。"
         }
       }
     },

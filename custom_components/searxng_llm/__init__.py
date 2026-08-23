@@ -2,7 +2,7 @@
 
 提供两条使用路径：
 
-* LLM 工具：HA 2026.8+ 经 LLM 平台协议自动聚合进 Assist API；
+* LLM 工具：搜索后自动抓取网页正文；HA 2026.8+ 经 LLM 平台协议自动聚合进 Assist API；
   HA 2026.8 之前注册经典 llm.API（见 :mod:`custom_components.searxng_llm.llm`）。
 * 服务 ``searxng_llm.search``：任意自动化/脚本/对话代理都可调用，
   特别为 Extended OpenAI Conversation 这类不消费 HA LLM 工具 API 的
@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -48,7 +49,13 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             SERVICE_SEARCH,
             _handle_search,
             schema=vol.Schema(
-                {vol.Required(CONF_QUERY): str, vol.Optional(CONF_LANGUAGE): str}
+                {
+                    vol.Required(CONF_QUERY): vol.Any(
+                        str,
+                        vol.All(vol.Coerce(list), vol.Length(min=1, max=10), [str]),
+                    ),
+                    vol.Optional(CONF_LANGUAGE): str,
+                }
             ),
             supports_response=SupportsResponse.OPTIONAL,
         )
@@ -74,22 +81,46 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _handle_search(call: ServiceCall) -> ServiceResponse | None:
     """处理 ``searxng_llm.search`` 服务：返回 JSON 格式搜索结果。
 
-    返回 ``{"query", "results"[, "message"]}``；需要响应时（如 EOC 的
+    返回 ``{"query", "results"[, "message"]}``；``query`` 传列表时并行搜索
+    多个关键词（并发受集成「并行搜索数量」限制），返回合并去重后的
+    results 与逐关键词的 ``searches``。需要响应时（如 EOC 的
     ``response_variable: _function_result``）调用方会拿到该字典，
     否则返回 None。可选传入 ``language`` 临时覆盖集成的搜索语言。
     失败抛中文 HomeAssistantError，不崩溃。
     """
-    query = str(call.data.get(CONF_QUERY, "")).strip()
-    if not query:
+    raw = call.data.get(CONF_QUERY)
+    if isinstance(raw, list):
+        queries = [str(q).strip() for q in raw]
+    else:
+        queries = [str(raw or "").strip()]
+    queries = [q for q in queries if q]
+    if not queries:
         raise HomeAssistantError("请提供要搜索的内容（query 参数不能为空）。")
     language = call.data.get(CONF_LANGUAGE)
-    items = await execute_search(call.hass, query, language=language)
+    groups = await asyncio.gather(
+        *(execute_search(call.hass, q, language=language) for q in queries)
+    )
+    if len(queries) == 1:
+        query: str | list[str] = queries[0]
+        items = groups[0]
+    else:
+        merged: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in (item for group in groups for item in group):
+            url = item.get("url", "")
+            if not url or url not in seen:
+                merged.append(item)
+                if url:
+                    seen.add(url)
+        query = queries
+        items = merged
     if not call.return_response:
         return None
+    result: dict[str, Any] = {"query": query, "results": items}
+    if isinstance(query, list):
+        result["searches"] = [
+            {"query": q, "results": group} for q, group in zip(queries, groups)
+        ]
     if not items:
-        return {
-            "query": query,
-            "results": [],
-            "message": EMPTY_RESULTS_MESSAGE,
-        }
-    return {"query": query, "results": items}
+        result["message"] = EMPTY_RESULTS_MESSAGE
+    return result

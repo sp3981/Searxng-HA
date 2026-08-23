@@ -13,7 +13,7 @@ from custom_components.searxng_llm.const import (
     ERROR_INVALID_RESPONSE,
     ERROR_JSON_DISABLED,
 )
-from custom_components.searxng_llm.tool import SearxngError, search
+from custom_components.searxng_llm.tool import SearxngError, fetch_url, search
 
 
 class ToolSearchTests(unittest.IsolatedAsyncioTestCase):
@@ -132,6 +132,39 @@ class ToolSearchTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(SearxngError) as ctx:
             await search(session, "https://s.example", "q")
         self.assertEqual(ctx.exception.code, ERROR_INVALID_RESPONSE)
+
+    async def test_fetch_url_extracts_html_text(self):
+        """HTML 页面提取纯文本正文（去脚本/样式/标签）。"""
+        html_page = (
+            "<html><head><style>h1{color:red}</style>"
+            "<script>alert(1)</script></head><body>"
+            "<h1>标题</h1><p>正文内容 &amp; 更多。</p></body></html>"
+        )
+        session = FakeSession(FakeResponse(200, html_page, "text/html"))
+        text = await fetch_url(session, "https://p.example/a", timeout=5)
+        self.assertIn("正文内容", text)
+        self.assertNotIn("alert", text)
+        self.assertNotIn("<h1>", text)
+
+    async def test_fetch_url_plain_text_truncated(self):
+        """非 HTML 内容按文本截断。"""
+        session = FakeSession(FakeResponse(200, "x" * 5000, "text/plain"))
+        text = await fetch_url(session, "https://p.example/b", max_chars=100)
+        self.assertEqual(len(text), 100)
+
+    async def test_fetch_url_http_error_raises(self):
+        """网页返回 4xx/5xx → invalid_response。"""
+        session = FakeSession(FakeResponse(404, "Not Found", "text/html"))
+        with self.assertRaises(SearxngError) as ctx:
+            await fetch_url(session, "https://p.example/c")
+        self.assertEqual(ctx.exception.code, ERROR_INVALID_RESPONSE)
+
+    async def test_fetch_url_timeout(self):
+        """抓取超时 → cannot_connect。"""
+        session = FakeSession(FakeResponse(enter_error=asyncio.TimeoutError()))
+        with self.assertRaises(SearxngError) as ctx:
+            await fetch_url(session, "https://p.example/d")
+        self.assertEqual(ctx.exception.code, ERROR_CANNOT_CONNECT)
 
 
 if __name__ == "__main__":

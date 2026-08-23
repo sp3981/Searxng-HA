@@ -14,9 +14,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from collections.abc import Callable
+from contextlib import nullcontext
 from typing import Any
 
 import voluptuous as vol
@@ -29,20 +31,28 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import (
     API_NAME,
     CONF_BASE_URL,
+    CONF_FETCH_COUNT,
+    CONF_FETCH_PARALLEL,
+    CONF_FETCH_TIMEOUT,
     CONF_LANGUAGE,
     CONF_PASSWORD,
     CONF_RESULTS,
+    CONF_SEARCH_PARALLEL,
     CONF_TIMEOUT,
     CONF_USERNAME,
+    DEFAULT_FETCH_COUNT,
+    DEFAULT_FETCH_PARALLEL,
+    DEFAULT_FETCH_TIMEOUT,
     DEFAULT_LANGUAGE,
     DEFAULT_RESULTS,
+    DEFAULT_SEARCH_PARALLEL,
     DEFAULT_TIMEOUT,
     DOMAIN,
     EMPTY_RESULTS_MESSAGE,
     TOOL_DESCRIPTION,
     TOOL_NAME,
 )
-from .tool import SearxngError, search
+from .tool import SearxngError, fetch_url, search
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -79,18 +89,31 @@ def _first_configured_entry(hass: HomeAssistant) -> ConfigEntry | None:
     return None
 
 
-def _parse_settings(config: dict[str, Any]) -> tuple[int, int, str]:
-    """解析结果条数、超时与搜索语言（非法值回退默认）。"""
-    try:
-        results = int(config.get(CONF_RESULTS, DEFAULT_RESULTS))
-    except (TypeError, ValueError):
-        results = DEFAULT_RESULTS
-    try:
-        timeout = int(config.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
-    except (TypeError, ValueError):
-        timeout = DEFAULT_TIMEOUT
-    language = str(config.get(CONF_LANGUAGE) or "").strip() or DEFAULT_LANGUAGE
-    return results, timeout, language
+def _parse_settings(
+    config: dict[str, Any],
+) -> tuple[int, int, str, int, int, int, int]:
+    """解析搜索与抓取参数（非法/越界值回退默认）。
+
+    返回 (results, timeout, language, fetch_count, fetch_parallel,
+    fetch_timeout, search_parallel)。
+    """
+
+    def _int(key: str, default: int, low: int, high: int) -> int:
+        try:
+            value = int(config.get(key, default))
+        except (TypeError, ValueError):
+            return default
+        return min(high, max(low, value))
+
+    return (
+        _int(CONF_RESULTS, DEFAULT_RESULTS, 1, 20),
+        _int(CONF_TIMEOUT, DEFAULT_TIMEOUT, 3, 60),
+        str(config.get(CONF_LANGUAGE) or "").strip() or DEFAULT_LANGUAGE,
+        _int(CONF_FETCH_COUNT, DEFAULT_FETCH_COUNT, 0, 10),
+        _int(CONF_FETCH_PARALLEL, DEFAULT_FETCH_PARALLEL, 1, 10),
+        _int(CONF_FETCH_TIMEOUT, DEFAULT_FETCH_TIMEOUT, 3, 60),
+        _int(CONF_SEARCH_PARALLEL, DEFAULT_SEARCH_PARALLEL, 1, 10),
+    )
 
 
 async def execute_search(
@@ -99,12 +122,13 @@ async def execute_search(
     entry: ConfigEntry | None = None,
     language: str | None = None,
 ) -> list[dict[str, str]]:
-    """执行 SearXNG 搜索，返回结果列表；失败抛中文 HomeAssistantError。
+    """执行 SearXNG 搜索并按配置并行抓取网页正文，失败抛中文 HomeAssistantError。
 
     供新架构工具、经典架构工具与 ``searxng_llm.search`` 服务复用，
     保证三条路径的错误提示一致且不崩溃。``entry`` 可显式传入
     （经典架构直接从配置条目读取，避免依赖 hass 查找）；
     ``language`` 可临时覆盖条目配置的搜索语言（None 则用配置值）。
+    搜索与抓取的并发上限取自条目配置（search_parallel / fetch_parallel）。
     """
     if entry is None:
         entry = _first_configured_entry(hass)
@@ -114,26 +138,38 @@ async def execute_search(
     base_url = str(config.get(CONF_BASE_URL) or "").strip().rstrip("/")
     if not base_url:
         raise HomeAssistantError("尚未配置 SearXNG 地址，请先在集成设置中填写。")
-    results, timeout, configured_language = _parse_settings(config)
+    (
+        results,
+        timeout,
+        language_configured,
+        fetch_count,
+        fetch_parallel,
+        fetch_timeout,
+        search_parallel,
+    ) = _parse_settings(config)
     if language is None:
-        language = configured_language
+        language = language_configured
     else:
-        language = str(language).strip() or configured_language
+        language = str(language).strip() or language_configured
+
     started = time.monotonic()
     meta: dict = {}
+    session = async_get_clientsession(hass)
+    search_sem = _get_semaphore(hass, "search_sem", search_parallel)
 
     try:
-        items = await search(
-            async_get_clientsession(hass),
-            base_url,
-            query,
-            results=results,
-            username=str(config.get(CONF_USERNAME) or "") or None,
-            password=str(config.get(CONF_PASSWORD) or "") or None,
-            timeout=timeout,
-            language=language,
-            meta=meta,
-        )
+        async with search_sem or nullcontext():
+            items = await search(
+                session,
+                base_url,
+                query,
+                results=results,
+                username=str(config.get(CONF_USERNAME) or "") or None,
+                password=str(config.get(CONF_PASSWORD) or "") or None,
+                timeout=timeout,
+                language=language,
+                meta=meta,
+            )
     except SearxngError as err:
         _LOGGER.warning(
             "SearXNG 搜索失败（耗时 %.1f 秒）：%s",
@@ -159,7 +195,74 @@ async def execute_search(
         meta.get("unresponsive_engines"),
         meta.get("number_of_results"),
     )
+
+    if items and fetch_count > 0:
+        fetch_started = time.monotonic()
+        items = await _fetch_pages(
+            session, hass, items, fetch_count, fetch_parallel, fetch_timeout
+        )
+        fetched_ok = sum(1 for item in items if item.get("fetched_content"))
+        fetched_failed = sum(1 for item in items if item.get("fetch_error"))
+        _LOGGER.debug(
+            "SearXNG 网页抓取完成：query=%r 抓取=%d 条 成功=%d 失败=%d 耗时=%.1f 秒",
+            query,
+            min(len(items), fetch_count),
+            fetched_ok,
+            fetched_failed,
+            time.monotonic() - fetch_started,
+        )
     return items
+
+
+def _get_semaphore(
+    hass: HomeAssistant | None, key: str, limit: int
+) -> asyncio.Semaphore | None:
+    """取/建 hass 级并发信号量（测试桩或无 data 时返回 None，不限并发）。"""
+    data = getattr(hass, "data", None)
+    if data is None:
+        return None
+    store = data.setdefault(f"{DOMAIN}_sems", {})
+    sem = store.get(key)
+    if sem is None:
+        sem = asyncio.Semaphore(max(1, int(limit)))
+        store[key] = sem
+    return sem
+
+
+async def _fetch_pages(
+    session: aiohttp.ClientSession,
+    hass: HomeAssistant | None,
+    items: list[dict[str, str]],
+    fetch_count: int,
+    fetch_parallel: int,
+    fetch_timeout: int,
+) -> list[dict[str, str]]:
+    """并行抓取前 ``fetch_count`` 条结果的网页正文。
+
+    正文写入 ``fetched_content``；单条失败只写入 ``fetch_error``，
+    不影响其它抓取与整体搜索结果。
+    """
+    fetch_sem = _get_semaphore(hass, "fetch_sem", fetch_parallel)
+
+    async def _fetch_one(item: dict[str, str]) -> dict[str, str]:
+        url = item.get("url", "")
+        if not url:
+            return item
+        try:
+            async with fetch_sem or nullcontext():
+                text = await fetch_url(session, url, timeout=fetch_timeout)
+        except SearxngError as err:
+            item["fetch_error"] = str(err)
+        except Exception as err:  # 单条抓取的未知异常只记录，不崩溃
+            item["fetch_error"] = f"抓取失败：{err}"
+        else:
+            item["fetched_content"] = text
+        return item
+
+    fetched = await asyncio.gather(
+        *(_fetch_one(item) for item in items[:fetch_count])
+    )
+    return [*fetched, *items[fetch_count:]]
 
 
 if NEW_STYLE:
