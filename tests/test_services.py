@@ -1,4 +1,4 @@
-"""__init__.py：searxng_llm.search 服务（含多关键词并行）单元测试。"""
+"""__init__.py：searxng_llm.search / searxng_llm.fetch 服务单元测试。"""
 
 from __future__ import annotations
 
@@ -113,6 +113,78 @@ class SearchServiceTests(unittest.IsolatedAsyncioTestCase):
         call = ServiceCall(_FakeHass([_entry()]), {"query": "天气"})
         call.return_response = False
         self.assertIsNone(await component_init._handle_search(call))
+
+
+class FetchServiceTests(unittest.IsolatedAsyncioTestCase):
+    """_handle_fetch 服务行为（AI 智能抓取）。"""
+
+    async def test_single_url_returns_content(self):
+        """单个 url：返回抓取后的正文。"""
+        session = FakeSession(
+            FakeResponse(
+                200,
+                "<html><body><p>正文内容。</p></body></html>",
+                "text/html",
+            )
+        )
+        set_session(session)
+        call = ServiceCall(_FakeHass([_entry()]), {"url": "https://a.example/article"})
+        call.return_response = True
+        result = await component_init._handle_fetch(call)
+        self.assertEqual(result["urls"], ["https://a.example/article"])
+        self.assertEqual(result["results"][0]["content"], "正文内容。")
+
+    async def test_parallel_urls_fetched(self):
+        """url 列表：并行抓取多个网页。"""
+        session = FakeSession(
+            [
+                FakeResponse(200, "<html><body><p>甲。</p></body></html>", "text/html"),
+                FakeResponse(200, "<html><body><p>乙。</p></body></html>", "text/html"),
+            ]
+        )
+        set_session(session)
+        call = ServiceCall(
+            _FakeHass([_entry()]), {"url": ["https://a.example/1", "https://b.example/2"]}
+        )
+        call.return_response = True
+        result = await component_init._handle_fetch(call)
+        self.assertEqual(len(result["results"]), 2)
+        self.assertEqual(
+            {i["url"] for i in result["results"]},
+            {"https://a.example/1", "https://b.example/2"},
+        )
+        self.assertEqual(len(session.calls), 2)
+
+    async def test_fetch_failure_returns_error_field(self):
+        """抓取失败返回 error 字段，不抛异常。"""
+        set_session(FakeSession(FakeResponse(403, "Forbidden", "text/html")))
+        call = ServiceCall(_FakeHass([_entry()]), {"url": "https://a.example/1"})
+        call.return_response = True
+        result = await component_init._handle_fetch(call)
+        self.assertIn("error", result["results"][0])
+
+    async def test_empty_url_raises(self):
+        """空地址抛中文 HomeAssistantError。"""
+        call = ServiceCall(_FakeHass(), {"url": "   "})
+        call.return_response = True
+        with self.assertRaises(HomeAssistantError) as ctx:
+            await component_init._handle_fetch(call)
+        self.assertIn("网页地址", str(ctx.exception))
+
+    async def test_no_response_requested_returns_none(self):
+        """未要求响应时返回 None。"""
+        set_session(
+            FakeSession(
+                FakeResponse(
+                    200,
+                    "<html><body><p>正文。</p></body></html>",
+                    "text/html",
+                )
+            )
+        )
+        call = ServiceCall(_FakeHass([_entry()]), {"url": "https://a.example/1"})
+        call.return_response = False
+        self.assertIsNone(await component_init._handle_fetch(call))
 
 
 if __name__ == "__main__":

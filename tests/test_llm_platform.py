@@ -30,6 +30,7 @@ from custom_components.searxng_llm.const import (
     CONF_RESULTS,
     CONF_TIMEOUT,
     DOMAIN,
+    TOOL_FETCH_NAME,
     TOOL_NAME,
 )
 
@@ -104,11 +105,14 @@ class SearxngPlatformTests(unittest.IsolatedAsyncioTestCase):
         entry = _entry_with_base_url("https://searx.example.com")
         tools = self.module.async_get_tools(_FakeHass([entry]), None, "assist")
         self.assertIsNotNone(tools)
-        self.assertEqual(len(tools.tools), 1)
+        self.assertEqual(len(tools.tools), 2)
         tool = tools.tools[0]
         self.assertEqual(tool.name, TOOL_NAME)
         self.assertIn("SearXNG", tool.description)
         self.assertIn("query", tool.parameters.schema)
+        fetch_tool = tools.tools[1]
+        self.assertEqual(fetch_tool.name, TOOL_FETCH_NAME)
+        self.assertIn("url", fetch_tool.parameters.schema)
 
     async def test_tool_call_returns_results(self):
         """async_call 执行搜索并返回结构化结果。"""
@@ -161,6 +165,40 @@ class SearxngPlatformTests(unittest.IsolatedAsyncioTestCase):
             NewStyleLLMContext(),
         )
         self.assertEqual(result["results"][0]["fetched_content"], "正文。")
+
+    async def test_fetch_tool_call_returns_content(self):
+        """fetch_webpage 工具抓取正文（新架构）。"""
+        session = FakeSession(
+            FakeResponse(
+                200,
+                "<html><body><p>正文。</p></body></html>",
+                "text/html",
+            )
+        )
+        set_session(session)
+        entry = _entry_with_base_url("https://searx.example.com")
+        tool = self.module.SearxngFetchTool()
+        result = await tool.async_call(
+            _FakeHass([entry]),
+            NewStyleToolInput(TOOL_FETCH_NAME, {"url": "https://a.example/article"}),
+            NewStyleLLMContext(),
+        )
+        self.assertEqual(result["url"], "https://a.example/article")
+        self.assertEqual(result["results"][0]["content"], "正文。")
+
+    async def test_fetch_tool_call_empty_url_raises_chinese_error(self):
+        """空地址抛中文 HomeAssistantError。"""
+        from homeassistant.exceptions import HomeAssistantError
+
+        entry = _entry_with_base_url("https://searx.example.com")
+        tool = self.module.SearxngFetchTool()
+        with self.assertRaises(HomeAssistantError) as ctx:
+            await tool.async_call(
+                _FakeHass([entry]),
+                NewStyleToolInput(TOOL_FETCH_NAME, {"url": "   "}),
+                NewStyleLLMContext(),
+            )
+        self.assertIn("网页地址", str(ctx.exception))
 
     async def test_tool_call_connection_failure_raises_chinese_error(self):
         """SearXNG 不可用时抛中文 HomeAssistantError。"""

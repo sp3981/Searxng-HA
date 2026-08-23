@@ -17,10 +17,12 @@ CONF_FETCH_COUNT = "fetch_count"
 CONF_FETCH_PARALLEL = "fetch_parallel"
 CONF_FETCH_TIMEOUT = "fetch_timeout"
 CONF_QUERY = "query"
+CONF_URL = "url"
 
-# 服务名：searxng_llm.search，供 Extended OpenAI Conversation 等
-# 不消费 HA LLM 工具 API 的对话代理通过 script 函数调用
+# 服务名：searxng_llm.search / searxng_llm.fetch，供 Extended OpenAI
+# Conversation 等不消费 HA LLM 工具 API 的对话代理通过 script 函数调用
 SERVICE_SEARCH = "search"
+SERVICE_FETCH = "fetch"
 
 DEFAULT_RESULTS = 5
 DEFAULT_TIMEOUT = 15
@@ -29,7 +31,10 @@ DEFAULT_TIMEOUT = 15
 # all=全部语言，也可以填具体语言代码，如 zh-CN、zh、en-US、en
 DEFAULT_LANGUAGE = "auto"
 DEFAULT_SEARCH_PARALLEL = 3
-DEFAULT_FETCH_COUNT = 3
+
+# 搜索后自动抓取前几条结果：0=不自动抓取（默认），由 AI 按需调用
+# 「抓取网页」工具，根据搜索结果智能决定要打开哪些链接
+DEFAULT_FETCH_COUNT = 0
 DEFAULT_FETCH_PARALLEL = 5
 DEFAULT_FETCH_TIMEOUT = 20
 
@@ -43,6 +48,13 @@ TOOL_DESCRIPTION = (
     "返回与关键词相关网页的标题、链接和内容摘要。"
     "当用户的问题涉及最新资讯、实时数据、新闻或需要联网验证的信息时，"
     "应调用此工具获取最新资料。"
+)
+TOOL_FETCH_NAME = "fetch_webpage"
+TOOL_FETCH_DESCRIPTION = (
+    "抓取指定网页地址（url）的正文内容。"
+    "先用 searxng_search 搜索，再根据搜索结果中的链接，"
+    "用本工具打开那些看起来最能回答问题的网页，获取详细内容。"
+    "需要查看多个网页时可以并行调用本工具。"
 )
 
 # SearxngError 错误码，与 strings.json 中 error 段落的键名一一对应

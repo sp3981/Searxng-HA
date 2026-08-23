@@ -16,3 +16,14 @@ search:
       example: zh-CN
       selector:
         text: {}
+fetch:
+  name: 抓取网页
+  description: 抓取指定网页地址的正文内容，供模型在搜索后按需打开链接（AI 智能抓取）。
+  fields:
+    url:
+      name: 网页地址
+      description: 要抓取的 http/https 网页地址；也可传列表，一次并行抓取多个（并发受集成「并行抓取数量」限制）。
+      required: true
+      example: https://example.com/article
+      selector:
+        text: {}

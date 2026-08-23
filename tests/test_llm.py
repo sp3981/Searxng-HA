@@ -22,6 +22,7 @@ from custom_components.searxng_llm.const import (
     CONF_LANGUAGE,
     CONF_RESULTS,
     CONF_TIMEOUT,
+    TOOL_FETCH_NAME,
     TOOL_NAME,
 )
 
@@ -53,11 +54,15 @@ class SearxngLLMTests(unittest.IsolatedAsyncioTestCase):
         api = _make_api()
         instance = await api.async_get_api_instance(LLMContext())
         tools = await instance.async_get_tools()
-        self.assertEqual(len(tools), 1)
+        self.assertEqual(len(tools), 2)
         tool = tools[0]
         self.assertEqual(tool.name, TOOL_NAME)
         self.assertIn("SearXNG", tool.description)
         self.assertIn("query", tool.parameters.schema)
+        fetch_tool = tools[1]
+        self.assertEqual(fetch_tool.name, TOOL_FETCH_NAME)
+        self.assertIn("抓取", fetch_tool.description)
+        self.assertIn("url", fetch_tool.parameters.schema)
 
     async def test_new_style_call_returns_results(self):
         """新调用约定 llm_func(tool_input) 返回结构化结果。"""
@@ -142,6 +147,42 @@ class SearxngLLMTests(unittest.IsolatedAsyncioTestCase):
         tool = (await instance.async_get_tools())[0]
         result = await tool.llm_func({"query": "天气"})
         self.assertIn("fetch_error", result.serialized_result["results"][0])
+
+    async def test_fetch_tool_returns_webpage_content(self):
+        """fetch_webpage 工具按 url 抓取正文（AI 智能抓取）。"""
+        session = FakeSession(
+            FakeResponse(
+                200,
+                "<html><body><p>正文内容。</p></body></html>",
+                "text/html",
+            )
+        )
+        set_session(session)
+        api = _make_api()
+        instance = await api.async_get_api_instance(LLMContext())
+        tool = (await instance.async_get_tools())[1]
+        result = await tool.llm_func({"url": "https://a.example/article"})
+        self.assertEqual(result.serialized_result["url"], "https://a.example/article")
+        self.assertEqual(result.serialized_result["results"][0]["content"], "正文内容。")
+
+    async def test_fetch_tool_failure_returns_error_without_crashing(self):
+        """单条抓取失败返回 error 字段，不崩溃。"""
+        session = FakeSession(FakeResponse(403, "Forbidden", "text/html"))
+        set_session(session)
+        api = _make_api()
+        instance = await api.async_get_api_instance(LLMContext())
+        tool = (await instance.async_get_tools())[1]
+        result = await tool.llm_func({"url": "https://a.example/article"})
+        self.assertIn("error", result.serialized_result["results"][0])
+
+    async def test_fetch_tool_empty_url_raises_tool_error(self):
+        """空地址抛出中文 ToolError。"""
+        api = _make_api()
+        instance = await api.async_get_api_instance(LLMContext())
+        tool = (await instance.async_get_tools())[1]
+        with self.assertRaises(ToolError) as ctx:
+            await tool.llm_func({"url": "   "})
+        self.assertIn("网页地址", str(ctx.exception))
 
     async def test_connection_failure_raises_tool_error_in_chinese(self):
         """SearXNG 不可用时抛 ToolError，给出中文提示（系统不崩溃）。"""

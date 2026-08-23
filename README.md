@@ -6,9 +6,9 @@
 ## 功能特性
 
 - 遵循 Home Assistant 官方 **LLM 工具 API**：HA 2026.8+ 使用新版 **LLM 平台协议**（模块级 `async_get_tools` 自动聚合进 Assist API），HA 2024.6–2026.7 使用经典 `llm.API` 注册方式，两代架构自动适配；
-- 额外提供 **`searxng_llm.search` 服务**，供 Extended OpenAI Conversation 等不消费 HA LLM 工具 API 的对话代理经 script 函数接入（见下文）；
+- 额外提供 **`searxng_llm.search` / `searxng_llm.fetch` 服务**，供 Extended OpenAI Conversation 等不消费 HA LLM 工具 API 的对话代理经 script 函数接入（见下文）；
 - 工具内部调用 SearXNG 的 JSON 接口 `/search?q=...&format=json`，取前 N 条结果的**标题、链接、摘要**返回给模型；
-- **搜索后自动抓取网页正文**：对前若干条结果并行抓取网页内容（HTML 自动转纯文本、截断），模型回答时可引用网页实际内容而不只是摘要；
+- **AI 智能抓取网页**：默认**不自动抓取**；模型拿到搜索结果后可自行决定调用 `fetch_webpage` 工具（或 `searxng_llm.fetch` 服务）打开任意链接，并行抓取正文（HTML 自动转纯文本、截断）。也可以在配置里恢复「自动抓取前 N 条」；
 - **并行搜索**：`searxng_llm.search` 服务支持一次传多个关键词并行搜索，搜索/抓取并发上限均可在配置中设置；
 - SearXNG 地址、可选用户名/密码（HTTP Basic Auth）、搜索语言、返回条数、超时时间全部通过**界面配置**，不硬编码；
 - 全程异步（aiohttp），**零第三方依赖**；
@@ -62,7 +62,7 @@
 | 返回结果条数 | 每次搜索返回给模型的结果数（1–20） | 5 |
 | 超时时间 | 搜索请求超时秒数（3–60） | 15 |
 | 并行搜索数量 | 同时向 SearXNG 发起的搜索请求上限（1–10） | 3 |
-| 抓取结果条数 | 每条搜索结果中自动抓取网页正文的前几条（0=不抓取，1–10） | 3 |
+| 自动抓取条数 | 搜索后自动抓取前几条结果的网页正文（0=不自动抓取，由 AI 按需调用「抓取网页」工具智能决定抓哪些链接，1–10） | 0 |
 | 并行抓取数量 | 同时抓取网页的数量上限（1–10） | 5 |
 | 抓取超时时间 | 单个网页抓取的超时秒数（3–60） | 20 |
 
@@ -77,7 +77,7 @@
 
 - **HA 2026.8 及以上**：本集成经新版 LLM 平台协议自动聚合进 **Assist API**。
   请在对话代理的配置（子条目选项）里把 **LLM API（`llm_hass_api`）** 选为 **Assist**，
-  `searxng_search` 工具即随 Assist 工具集提供给模型（若代理界面另有工具开关，请确认启用）。
+  `searxng_search`（搜索）与 `fetch_webpage`（AI 智能抓取）工具即随 Assist 工具集提供给模型（若代理界面另有工具开关，请确认启用）。
 - **HA 2024.6 – 2026.7**：添加集成后自动注册经典 LLM API（**SearXNG 联网搜索**），
   基于 LLM 的对话代理即可看到该工具。
 
@@ -86,7 +86,7 @@
 - “帮我搜索一下今天的北京天气”
 - “DeepSeek 有什么最新消息？”
 
-模型收到的是结构化结果（查询词 + 前 N 条 `标题/链接/摘要`，启用抓取时每条另含 `fetched_content` 网页正文），会自然融入最终回答。
+模型收到的是结构化结果（查询词 + 前 N 条 `标题/链接/摘要`；配置自动抓取时每条另含 `fetched_content` 网页正文）。默认不自动抓取：模型会按需调用 `fetch_webpage` 工具打开它认为最相关的链接，拿回正文后再组织最终回答。
 
 ### Extended OpenAI Conversation（EOC）
 
@@ -94,10 +94,11 @@
 > 它的工具只来自自身配置里的 **Functions YAML**，因此装完本集成后工具不会自动出现在
 > EOC 中。请按下面步骤在 EOC 里挂接本集成提供的搜索服务。
 
-1. 确保已添加并配置好本集成（`searxng_llm.search` 服务由本集成注册）；
+1. 确保已添加并配置好本集成（`searxng_llm.search` / `searxng_llm.fetch` 服务由本集成注册）；
 2. 打开 **设置 → 设备与服务 → Extended OpenAI Conversation**，进入你使用的**对话配置**
    （v3 起每个对话是一个子条目，点其「配置」），在**高级**页找到 **Functions** 字段；
-3. 在 YAML 列表**末尾追加**以下 script 函数（保持已有内容不变）：
+3. 在 YAML 列表**末尾追加**以下两个 script 函数——`searxng_search`（搜索）和
+   `fetch_webpage`（AI 智能抓取：模型拿到链接后按需打开网页正文，保持已有内容不变）：
 
    ```yaml
    - spec:
@@ -119,13 +120,32 @@
            query: "{{ query }}"
            # language: zh-CN  # 可选：临时覆盖集成配置的搜索语言
          response_variable: _function_result
+   - spec:
+       name: fetch_webpage
+       description: 抓取指定网页地址（url）的正文内容。先用 searxng_search 搜索，再根据搜索结果中的链接，用本工具打开那些看起来最能回答问题的网页，获取详细内容。需要查看多个网页时可以并行调用本工具。
+       parameters:
+         type: object
+         properties:
+           url:
+             type: string
+             description: 要抓取的网页地址（搜索结果中的链接）
+         required:
+         - url
+     function:
+       type: script
+       sequence:
+       - service: searxng_llm.fetch
+         data:
+           url: "{{ url }}"
+         response_variable: _function_result
    ```
 
-4. 保存后即可提问（例如“今天有什么科技新闻？”）。模型发起调用时，EOC 会执行
-   `searxng_llm.search` 服务，并通过 `response_variable: _function_result`
-   把搜索结果回传给模型；
-5. 验证：EOC 的 Functions 编辑框里能看到 `searxng_search`；提问后 SearXNG 实例的
-   访问日志里会出现 `/search?q=...&format=json` 请求。
+4. 保存后即可提问（例如“今天有什么科技新闻？”）。模型先调用 `searxng_search`
+   拿链接，需要细节时再调用 `fetch_webpage` 打开相关网页；EOC 会执行对应的
+   `searxng_llm.search` / `searxng_llm.fetch` 服务，并通过
+   `response_variable: _function_result` 把结果回传给模型；
+5. 验证：EOC 的 Functions 编辑框里能看到 `searxng_search` 和 `fetch_webpage`；
+   提问后 SearXNG 实例的访问日志里会出现 `/search?q=...&format=json` 请求。
 
 > 若 EOC 配置界面没有 Functions 字段，请先把 Extended OpenAI Conversation 升级到较新版本。
 
@@ -153,6 +173,22 @@ data:
 response_variable: result
 ```
 
+AI 智能抓取：模型想打开搜索结果里的某个链接时调用（或自动化中按需抓取）：
+
+```yaml
+action: searxng_llm.fetch
+data:
+  url: https://example.com/article
+  # url 也可传列表，一次并行抓取多个：
+  # url:
+  #   - https://example.com/a
+  #   - https://example.com/b
+response_variable: result
+```
+
+服务返回 `{"urls": [...], "results": [{"url", "content"} 或 {"url", "error"}, ...]}`；
+抓取失败的条目只带 `error` 字段，不影响其它条目。
+
 任何对话代理只要能执行 HA 服务并读取 `response_variable`，都可以用这种方式接入联网搜索。
 
 ## 故障排查
@@ -163,11 +199,11 @@ response_variable: result
 | 配置时报「认证失败」 | 检查用户名/密码（HTTP 401），或实例的访问控制 |
 | 提示「未启用 JSON 输出」（HTTP 403 / 非 JSON 响应） | `settings.yml` 的 `search.formats` 缺少 `json`，加入后重启 SearXNG |
 | 工具不出现 / 模型不调用 | 确认 HA ≥ 2024.6、已重启、对话代理基于 LLM 且工具已启用；查看 `home-assistant.log` |
-| 用 Extended OpenAI Conversation 时模型从不搜索 | EOC 不消费 HA LLM 工具 API，请按「使用方法 → Extended OpenAI Conversation」在 Functions YAML 里追加 `searxng_search` 函数 |
+| 用 Extended OpenAI Conversation 时模型从不搜索 | EOC 不消费 HA LLM 工具 API，请按「使用方法 → Extended OpenAI Conversation」在 Functions YAML 里追加 `searxng_search` 与 `fetch_webpage` 两个函数 |
 | 模型回复「没有返回任何结果」 | SearXNG 实例对该查询返回了 0 条结果（常见原因：实例引擎超时/不可用/被限流）。先在本机 curl `实例地址/search?q=test&format=json` 验证实例是否正常返回 results，再调大集成的「超时时间」，并查看 `home-assistant.log` 里「SearXNG 搜索完成」日志的耗时与条数 |
 | HA 2026.8+ 的官方代理里看不到工具 | 在代理配置里把 LLM API（`llm_hass_api`）设为 **Assist**；确认本集成已添加且配置连通性测试通过 |
 | 集成卡片点「配置」看不到地址/超时等选项 | 更新到 v1.2.1（修复了缺失 options flow 入口的问题）；旧版本请经 HACS 重新下载覆盖后重启 |
-| 模型没看到网页正文 | 检查「抓取结果条数」是否为 0；单页抓取失败会写入 `fetch_error` 字段，可在日志中搜索「SearXNG 网页抓取完成」查看成功/失败条数 |
+| 模型没看到网页正文 | 默认「自动抓取条数」为 0：应由模型按需调用 `fetch_webpage` 工具（EOC 需在 Functions YAML 里配置该函数）。若开启自动抓取，单页失败会写入 `fetch_error` 字段，可在日志中搜索「SearXNG 网页抓取完成 / 智能抓取完成」查看成功/失败条数 |
 | 运行中 SearXNG 挂了 | 对话中会收到中文错误说明（如「无法连接 SearXNG……」），HA 不会崩溃；SearXNG 恢复后自动继续可用 |
 
 ## 工作原理
@@ -175,11 +211,12 @@ response_variable: result
 ```
 HA 2026.8+  : llm 组件 ──► 平台函数 async_get_tools(hass, llm_context, api_id) ──► Assist API
 HA 2024.6~2026.7: llm.async_register_api ──► SearxngAPIInstance.async_get_tools ──► 经典 LLM API
-EOC / 自动化 / 脚本: action: searxng_llm.search ──► response_variable 回传
+EOC / 自动化 / 脚本: action: searxng_llm.search / searxng_llm.fetch ──► response_variable 回传
                     │
-三条路径都汇入 llm.py 的 execute_search()
-                    └─► tool.py：search() ──► GET /search?q=...&format=json（aiohttp）
+三条路径都汇入 llm.py 的 execute_search() / execute_fetch()
+                    ├─► tool.py：search() ──► GET /search?q=...&format=json（aiohttp）
                                                 └─► 取前 N 条 {标题, 链接, 摘要}
+                    └─► tool.py：fetch_url() ──► 抓取网页正文（HTML 转纯文本、截断）
 失败时：SearxngError ──► llm.ToolError / HomeAssistantError（标准异常 + 中文提示，对话不中断）
 ```
 
@@ -192,18 +229,19 @@ EOC / 自动化 / 脚本: action: searxng_llm.search ──► response_variable
 ├── custom_components/
 │   └── searxng_llm/
 │       ├── manifest.json   集成清单（无第三方依赖、config_flow）
-│       ├── __init__.py     条目装配 + searxng_llm.search 服务注册
+│       ├── __init__.py     条目装配 + searxng_llm.search / searxng_llm.fetch 服务注册
 │       ├── config_flow.py  界面配置向导（连通性验证 + 选项流）
 │       ├── const.py        常量与默认值
 │       ├── llm.py          双架构 LLM 工具实现（2026.8+ 平台函数 / 经典 llm.API）
 │       ├── tool.py         SearXNG JSON 客户端（纯 aiohttp，可独立测试）
-│       ├── services.yaml   search 服务声明
+│       ├── services.yaml   search / fetch 服务声明
 │       └── strings.json    中文界面文案
 └── tests/
     ├── stubs.py            Home Assistant 最小桩（本地测试用）
     ├── test_tool.py        SearXNG 客户端单元测试
     ├── test_llm.py         经典 LLM 工具装配与错误处理单元测试
-    └── test_llm_platform.py  新架构平台函数单元测试（HA 2026.8+）
+    ├── test_llm_platform.py  新架构平台函数单元测试（HA 2026.8+）
+    └── test_services.py    search / fetch 服务单元测试
 ```
 
 ## 开发与测试

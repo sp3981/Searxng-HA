@@ -9,7 +9,8 @@
 * HA 2026.8 之前（经典 ``llm.API`` 注册方式）：注册专属 API，由
   ``SearxngAPIInstance.async_get_tools`` 暴露工具。
 
-两代架构复用同一个搜索实现 :func:`execute_search`。
+两代架构复用同一套实现：搜索 :func:`execute_search`、AI 智能抓取
+:func:`execute_fetch`。
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from collections.abc import Callable
 from contextlib import nullcontext
 from typing import Any
 
+import aiohttp
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
@@ -50,6 +52,8 @@ from .const import (
     DOMAIN,
     EMPTY_RESULTS_MESSAGE,
     TOOL_DESCRIPTION,
+    TOOL_FETCH_DESCRIPTION,
+    TOOL_FETCH_NAME,
     TOOL_NAME,
 )
 from .tool import SearxngError, fetch_url, search
@@ -122,13 +126,15 @@ async def execute_search(
     entry: ConfigEntry | None = None,
     language: str | None = None,
 ) -> list[dict[str, str]]:
-    """执行 SearXNG 搜索并按配置并行抓取网页正文，失败抛中文 HomeAssistantError。
+    """执行 SearXNG 搜索，失败抛中文 HomeAssistantError。
 
     供新架构工具、经典架构工具与 ``searxng_llm.search`` 服务复用，
     保证三条路径的错误提示一致且不崩溃。``entry`` 可显式传入
     （经典架构直接从配置条目读取，避免依赖 hass 查找）；
     ``language`` 可临时覆盖条目配置的搜索语言（None 则用配置值）。
-    搜索与抓取的并发上限取自条目配置（search_parallel / fetch_parallel）。
+    自动抓取默认关闭（fetch_count=0）：网页正文由 AI 调用
+    ``fetch_webpage`` 工具按需智能抓取；配置 fetch_count>0 时
+    才在搜索后自动抓取前 N 条。搜索/抓取并发上限取自条目配置。
     """
     if entry is None:
         entry = _first_configured_entry(hass)
@@ -265,6 +271,60 @@ async def _fetch_pages(
     return [*fetched, *items[fetch_count:]]
 
 
+async def execute_fetch(
+    hass: HomeAssistant,
+    url_or_urls: str | list[str],
+    entry: ConfigEntry | None = None,
+) -> list[dict[str, str]]:
+    """抓取调用方（AI/服务）指定地址的网页正文 —— 智能抓取的执行端。
+
+    与自动抓取共用「并行抓取数量 / 抓取超时时间」配置；
+    每条结果成功为 ``{"url", "content"}``，失败为 ``{"url", "error"}``，
+    单条失败不影响其它地址。失败抛中文 HomeAssistantError。
+    """
+    if entry is None:
+        entry = _first_configured_entry(hass)
+    if entry is None:
+        raise HomeAssistantError("SearXNG 联网搜索尚未配置，请先在集成中添加实例。")
+    config = merged_config(entry)
+    _, _, _, _, fetch_parallel, fetch_timeout, _ = _parse_settings(config)
+
+    if isinstance(url_or_urls, str):
+        urls = [url_or_urls.strip()]
+    else:
+        urls = [str(u).strip() for u in url_or_urls]
+    urls = [u for u in urls if u]
+    if not urls:
+        raise HomeAssistantError("请提供要抓取的网页地址（url 参数不能为空）。")
+
+    session = async_get_clientsession(hass)
+    fetch_sem = _get_semaphore(hass, "fetch_sem", fetch_parallel)
+
+    async def _fetch_one(url: str) -> dict[str, str]:
+        if not url.startswith(("http://", "https://")):
+            return {"url": url, "error": "仅支持 http/https 网页地址。"}
+        try:
+            async with fetch_sem or nullcontext():
+                text = await fetch_url(session, url, timeout=fetch_timeout)
+        except SearxngError as err:
+            return {"url": url, "error": str(err)}
+        except Exception as err:  # 单条抓取的未知异常只记录，不崩溃
+            return {"url": url, "error": f"抓取失败：{err}"}
+        return {"url": url, "content": text}
+
+    started = time.monotonic()
+    fetched = await asyncio.gather(*(_fetch_one(url) for url in urls))
+    ok = sum(1 for item in fetched if "content" in item)
+    _LOGGER.debug(
+        "SearXNG 智能抓取完成：urls=%r 成功=%d 失败=%d 耗时=%.1f 秒",
+        urls,
+        ok,
+        len(urls) - ok,
+        time.monotonic() - started,
+    )
+    return fetched
+
+
 if NEW_STYLE:
 
     class SearxngSearchTool(llm.Tool):
@@ -295,6 +355,30 @@ if NEW_STYLE:
                 }
             return {"query": query, "results": items}
 
+    class SearxngFetchTool(llm.Tool):
+        """网页抓取工具（供模型按需打开搜索结果中的链接）。"""
+
+        name = TOOL_FETCH_NAME
+        description = TOOL_FETCH_DESCRIPTION
+        parameters = vol.Schema({vol.Required("url"): str})
+
+        async def async_call(
+            self,
+            hass: HomeAssistant,
+            tool_input: llm.ToolInput,
+            llm_context: llm.LLMContext,
+        ) -> dict[str, Any]:
+            """抓取指定网页并返回正文（失败返回 error 字段，不崩溃）。"""
+            del llm_context
+            args = getattr(tool_input, "tool_args", None)
+            url = str(args.get("url", "")).strip() if isinstance(args, dict) else ""
+            if not url:
+                raise HomeAssistantError(
+                    "请提供要抓取的网页地址（url 参数不能为空）。"
+                )
+            results = await execute_fetch(hass, url)
+            return {"url": url, "results": results}
+
     @callback
     def async_get_tools(
         hass: HomeAssistant, llm_context: Any, api_id: str
@@ -306,7 +390,7 @@ if NEW_STYLE:
         del llm_context, api_id
         if _first_configured_entry(hass) is None:
             return None
-        return LLMTools(tools=[SearxngSearchTool()])
+        return LLMTools(tools=[SearxngSearchTool(), SearxngFetchTool()])
 
 else:  # 经典架构（HA 2026.8 之前）
 
@@ -346,14 +430,20 @@ else:  # 经典架构（HA 2026.8 之前）
             self.llm_context = llm_context
 
         async def async_get_tools(self) -> list[llm.Tool]:
-            """返回可被模型调用的工具列表。"""
+            """返回可被模型调用的工具列表（搜索 + AI 智能抓取）。"""
             return [
                 llm.Tool(
                     name=TOOL_NAME,
                     description=TOOL_DESCRIPTION,
                     parameters=vol.Schema({vol.Required("query"): str}),
                     llm_func=self._tool_search,
-                )
+                ),
+                llm.Tool(
+                    name=TOOL_FETCH_NAME,
+                    description=TOOL_FETCH_DESCRIPTION,
+                    parameters=vol.Schema({vol.Required("url"): str}),
+                    llm_func=self._tool_fetch,
+                ),
             ]
 
         async def _tool_search(self, *args: Any) -> llm.ToolResult:
@@ -384,6 +474,22 @@ else:  # 经典架构（HA 2026.8 之前）
                     }
                 )
             return llm.ToolResult({"query": query, "results": items})
+
+        async def _tool_fetch(self, *args: Any) -> llm.ToolResult:
+            """抓取指定网页并返回正文（AI 智能抓取的经典架构入口）。"""
+            tool_input: llm.ToolInput = args[-1] if args else {}
+            url = (
+                str(tool_input.get("url", "")).strip()
+                if isinstance(tool_input, dict)
+                else ""
+            )
+            if not url:
+                raise ToolError("请提供要抓取的网页地址（url 参数不能为空）。")
+            try:
+                results = await execute_fetch(self.api.hass, url, self.api.entry)
+            except HomeAssistantError as err:
+                raise ToolError(str(err)) from err
+            return llm.ToolResult({"url": url, "results": results})
 
 
 def setup_api(
