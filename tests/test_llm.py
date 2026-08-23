@@ -16,6 +16,7 @@ from stubs import (
 from custom_components.searxng_llm import llm as component_llm
 from custom_components.searxng_llm.const import (
     CONF_BASE_URL,
+    CONF_LANGUAGE,
     CONF_RESULTS,
     CONF_TIMEOUT,
     TOOL_NAME,
@@ -29,6 +30,7 @@ def _make_api(data=None):
         CONF_BASE_URL: "https://searx.example.com",
         CONF_RESULTS: 3,
         CONF_TIMEOUT: 10,
+        CONF_LANGUAGE: "auto",
         "username": "",
         "password": "",
     }
@@ -74,6 +76,16 @@ class SearxngLLMTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.serialized_result["query"], "新闻")
         self.assertEqual(result.serialized_result["results"], [])
         self.assertIn("没有返回", result.serialized_result["message"])
+
+    async def test_configured_language_passed_to_search(self):
+        """集成配置的搜索语言传给 SearXNG language 参数。"""
+        session = FakeSession(FakeResponse(200, {"results": []}))
+        set_session(session)
+        api = _make_api({CONF_LANGUAGE: "zh-CN"})
+        instance = await api.async_get_api_instance(LLMContext())
+        tool = (await instance.async_get_tools())[0]
+        await tool.llm_func({"query": "天气"})
+        self.assertEqual(session.calls[0][1]["params"]["language"], "zh-CN")
 
     async def test_connection_failure_raises_tool_error_in_chinese(self):
         """SearXNG 不可用时抛 ToolError，给出中文提示（系统不崩溃）。"""

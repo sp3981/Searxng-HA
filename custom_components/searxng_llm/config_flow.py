@@ -16,10 +16,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_BASE_URL,
+    CONF_LANGUAGE,
     CONF_PASSWORD,
     CONF_RESULTS,
     CONF_TIMEOUT,
     CONF_USERNAME,
+    DEFAULT_LANGUAGE,
     DEFAULT_RESULTS,
     DEFAULT_TIMEOUT,
     DOMAIN,
@@ -65,6 +67,11 @@ def _build_schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
             ): selector.TextSelector(
                 selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
             ),
+            vol.Optional(
+                CONF_LANGUAGE, default=values.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
+            ): selector.TextSelector(
+                selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+            ),
             vol.Required(
                 CONF_RESULTS, default=values.get(CONF_RESULTS, DEFAULT_RESULTS)
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=20)),
@@ -87,6 +94,7 @@ async def _test_search(hass: HomeAssistant, data: Mapping[str, Any]) -> None:
         username=str(data.get(CONF_USERNAME) or "") or None,
         password=str(data.get(CONF_PASSWORD) or "") or None,
         timeout=timeout,
+        language=str(data.get(CONF_LANGUAGE) or DEFAULT_LANGUAGE),
     )
 
 
@@ -132,6 +140,10 @@ class SearxngConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_PASSWORD: str(user_input.get(CONF_PASSWORD) or ""),
                             CONF_RESULTS: int(user_input[CONF_RESULTS]),
                             CONF_TIMEOUT: int(user_input[CONF_TIMEOUT]),
+                            CONF_LANGUAGE: str(
+                                user_input.get(CONF_LANGUAGE) or ""
+                            ).strip()
+                            or DEFAULT_LANGUAGE,
                         },
                     )
         return self.async_show_form(

@@ -26,7 +26,13 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import HomeAssistantError
 
-from .const import CONF_QUERY, DOMAIN, EMPTY_RESULTS_MESSAGE, SERVICE_SEARCH
+from .const import (
+    CONF_LANGUAGE,
+    CONF_QUERY,
+    DOMAIN,
+    EMPTY_RESULTS_MESSAGE,
+    SERVICE_SEARCH,
+)
 from .llm import execute_search, setup_api
 
 _LOGGER = logging.getLogger(__name__)
@@ -41,7 +47,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
             DOMAIN,
             SERVICE_SEARCH,
             _handle_search,
-            schema=vol.Schema({vol.Required(CONF_QUERY): str}),
+            schema=vol.Schema(
+                {vol.Required(CONF_QUERY): str, vol.Optional(CONF_LANGUAGE): str}
+            ),
             supports_response=SupportsResponse.OPTIONAL,
         )
     return True
@@ -68,12 +76,14 @@ async def _handle_search(call: ServiceCall) -> ServiceResponse | None:
 
     返回 ``{"query", "results"[, "message"]}``；需要响应时（如 EOC 的
     ``response_variable: _function_result``）调用方会拿到该字典，
-    否则返回 None。失败抛中文 HomeAssistantError，不崩溃。
+    否则返回 None。可选传入 ``language`` 临时覆盖集成的搜索语言。
+    失败抛中文 HomeAssistantError，不崩溃。
     """
     query = str(call.data.get(CONF_QUERY, "")).strip()
     if not query:
         raise HomeAssistantError("请提供要搜索的内容（query 参数不能为空）。")
-    items = await execute_search(call.hass, query)
+    language = call.data.get(CONF_LANGUAGE)
+    items = await execute_search(call.hass, query, language=language)
     if not call.return_response:
         return None
     if not items:

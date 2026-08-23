@@ -25,6 +25,7 @@ from stubs import (
 
 from custom_components.searxng_llm.const import (
     CONF_BASE_URL,
+    CONF_LANGUAGE,
     CONF_RESULTS,
     CONF_TIMEOUT,
     DOMAIN,
@@ -57,6 +58,7 @@ def _entry_with_base_url(base_url: str) -> ConfigEntry:
         CONF_BASE_URL: base_url,
         CONF_RESULTS: 3,
         CONF_TIMEOUT: 10,
+        CONF_LANGUAGE: "auto",
         "username": "",
         "password": "",
     }
@@ -119,6 +121,21 @@ class SearxngPlatformTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["query"], "今天的天气")
         self.assertEqual(result["results"][0]["title"], "结果")
+
+    async def test_tool_call_passes_configured_language(self):
+        """配置的语言随请求发送给 SearXNG。"""
+        session = FakeSession(FakeResponse(200, {"results": []}))
+        set_session(session)
+        entry = _entry_with_base_url("https://searx.example.com")
+        entry.data[CONF_LANGUAGE] = "zh"
+        tool = self.module.SearxngSearchTool()
+        result = await tool.async_call(
+            _FakeHass([entry]),
+            NewStyleToolInput(TOOL_NAME, {"query": "新闻"}),
+            NewStyleLLMContext(),
+        )
+        self.assertEqual(result["results"], [])
+        self.assertEqual(session.calls[0][1]["params"]["language"], "zh")
 
     async def test_tool_call_connection_failure_raises_chinese_error(self):
         """SearXNG 不可用时抛中文 HomeAssistantError。"""

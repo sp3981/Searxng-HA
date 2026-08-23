@@ -34,7 +34,9 @@ class ToolSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(items[0], {"title": "甲", "url": "https://a.example", "content": "内容1"})
         url, kwargs = session.calls[0]
         self.assertEqual(url, "https://searx.example.com/search")
-        self.assertEqual(kwargs["params"], {"q": "天气", "format": "json"})
+        self.assertEqual(
+            kwargs["params"], {"q": "天气", "format": "json", "language": "auto"}
+        )
 
     async def test_basic_auth_when_credentials_given(self):
         """提供了用户名/密码时发送 HTTP Basic 认证头。"""
@@ -44,6 +46,15 @@ class ToolSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(auth.startswith("Basic "))
         decoded = base64.b64decode(auth[6:]).decode("utf-8")
         self.assertEqual(decoded, "user:pw")
+
+    async def test_language_parameter_passed_through(self):
+        """language 参数写入请求 params：默认 auto，可指定语言代码。"""
+        session = FakeSession(FakeResponse())
+        await search(session, "https://s.example", "q", language="zh-CN")
+        self.assertEqual(
+            session.calls[0][1]["params"],
+            {"q": "q", "format": "json", "language": "zh-CN"},
+        )
 
     async def test_no_auth_without_credentials(self):
         """未提供凭据时不发送认证头。"""

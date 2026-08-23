@@ -9,3 +9,10 @@ search:
       example: home assistant 最新版本
       selector:
         text: {}
+    language:
+      name: 搜索语言
+      description: SearXNG 的 language 参数：auto=自动识别、all=全部语言，或语言代码如 zh-CN、zh、en-US。缺省使用集成配置的搜索语言。
+      required: false
+      example: zh-CN
+      selector:
+        text: {}

@@ -10,6 +10,7 @@ from typing import Any
 import aiohttp
 
 from .const import (
+    DEFAULT_LANGUAGE,
     DEFAULT_RESULTS,
     DEFAULT_TIMEOUT,
     ERROR_CANNOT_CONNECT,
@@ -55,15 +56,17 @@ async def search(
     username: str | None = None,
     password: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
+    language: str = DEFAULT_LANGUAGE,
     meta: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """调用 SearXNG 的 JSON 接口搜索，返回前 ``results`` 条结果。
 
-    每条结果为 ``{"title", "url", "content"}`` 字典；
+    每条结果为 ``{"title", "url", "content"}`` 字典；``language`` 是
+    SearXNG 的 language 参数（auto=自动识别、all=全部语言，或语言代码如 zh-CN）；
     连接失败、认证失败、未启用 JSON 输出等情况抛出 :class:`SearxngError`。
     """
     url = f"{base_url.rstrip('/')}/search"
-    params: dict[str, str] = {"q": query, "format": "json"}
+    params: dict[str, str] = {"q": query, "format": "json", "language": language}
     headers = {"Accept": "application/json", "User-Agent": USER_AGENT}
     if username and password:
         headers["Authorization"] = _basic_auth_header(username, password)

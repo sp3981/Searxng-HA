@@ -8,7 +8,7 @@
 - 遵循 Home Assistant 官方 **LLM 工具 API**：HA 2026.8+ 使用新版 **LLM 平台协议**（模块级 `async_get_tools` 自动聚合进 Assist API），HA 2024.6–2026.7 使用经典 `llm.API` 注册方式，两代架构自动适配；
 - 额外提供 **`searxng_llm.search` 服务**，供 Extended OpenAI Conversation 等不消费 HA LLM 工具 API 的对话代理经 script 函数接入（见下文）；
 - 工具内部调用 SearXNG 的 JSON 接口 `/search?q=...&format=json`，取前 N 条结果的**标题、链接、摘要**返回给模型；
-- SearXNG 地址、可选用户名/密码（HTTP Basic Auth）、返回条数、超时时间全部通过**界面配置**，不硬编码；
+- SearXNG 地址、可选用户名/密码（HTTP Basic Auth）、搜索语言、返回条数、超时时间全部通过**界面配置**，不硬编码；
 - 全程异步（aiohttp），**零第三方依赖**；
 - 任何失败都抛出标准异常（`llm.ToolError` / `HomeAssistantError`），给出友好中文提示，绝不导致 Home Assistant 崩溃。
 
@@ -56,6 +56,7 @@
 | SearXNG 地址 | 实例根地址，如 `https://searx.example.com`（不要带 `/search`） | 必填 |
 | 用户名 | HTTP Basic Auth 用户名（可选） | 空 |
 | 密码 | HTTP Basic Auth 密码（可选） | 空 |
+| 搜索语言 | SearXNG 的 `language` 参数：`auto`=自动识别查询语言，`all`=全部语言，也可填语言代码（`zh-CN`/`zh`/`en-US`/`en` 等） | auto |
 | 返回结果条数 | 每次搜索返回给模型的结果数（1–20） | 5 |
 | 超时时间 | 请求超时秒数（3–60） | 15 |
 
@@ -110,6 +111,7 @@
        - service: searxng_llm.search
          data:
            query: "{{ query }}"
+           # language: zh-CN  # 可选：临时覆盖集成配置的搜索语言
          response_variable: _function_result
    ```
 
@@ -127,6 +129,7 @@
 action: searxng_llm.search
 data:
   query: home assistant 最新版本
+  language: zh-CN # 可选，缺省使用集成配置的搜索语言
 response_variable: result
 ```
 

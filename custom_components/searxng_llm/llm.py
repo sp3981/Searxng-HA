@@ -29,10 +29,12 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import (
     API_NAME,
     CONF_BASE_URL,
+    CONF_LANGUAGE,
     CONF_PASSWORD,
     CONF_RESULTS,
     CONF_TIMEOUT,
     CONF_USERNAME,
+    DEFAULT_LANGUAGE,
     DEFAULT_RESULTS,
     DEFAULT_TIMEOUT,
     DOMAIN,
@@ -77,8 +79,8 @@ def _first_configured_entry(hass: HomeAssistant) -> ConfigEntry | None:
     return None
 
 
-def _parse_settings(config: dict[str, Any]) -> tuple[int, int]:
-    """解析结果条数与超时（非法值回退默认）。"""
+def _parse_settings(config: dict[str, Any]) -> tuple[int, int, str]:
+    """解析结果条数、超时与搜索语言（非法值回退默认）。"""
     try:
         results = int(config.get(CONF_RESULTS, DEFAULT_RESULTS))
     except (TypeError, ValueError):
@@ -87,19 +89,22 @@ def _parse_settings(config: dict[str, Any]) -> tuple[int, int]:
         timeout = int(config.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
     except (TypeError, ValueError):
         timeout = DEFAULT_TIMEOUT
-    return results, timeout
+    language = str(config.get(CONF_LANGUAGE) or "").strip() or DEFAULT_LANGUAGE
+    return results, timeout, language
 
 
 async def execute_search(
     hass: HomeAssistant,
     query: str,
     entry: ConfigEntry | None = None,
+    language: str | None = None,
 ) -> list[dict[str, str]]:
     """执行 SearXNG 搜索，返回结果列表；失败抛中文 HomeAssistantError。
 
     供新架构工具、经典架构工具与 ``searxng_llm.search`` 服务复用，
     保证三条路径的错误提示一致且不崩溃。``entry`` 可显式传入
-    （经典架构直接从配置条目读取，避免依赖 hass 查找）。
+    （经典架构直接从配置条目读取，避免依赖 hass 查找）；
+    ``language`` 可临时覆盖条目配置的搜索语言（None 则用配置值）。
     """
     if entry is None:
         entry = _first_configured_entry(hass)
@@ -109,7 +114,11 @@ async def execute_search(
     base_url = str(config.get(CONF_BASE_URL) or "").strip().rstrip("/")
     if not base_url:
         raise HomeAssistantError("尚未配置 SearXNG 地址，请先在集成设置中填写。")
-    results, timeout = _parse_settings(config)
+    results, timeout, configured_language = _parse_settings(config)
+    if language is None:
+        language = configured_language
+    else:
+        language = str(language).strip() or configured_language
     started = time.monotonic()
     meta: dict = {}
 
@@ -122,6 +131,7 @@ async def execute_search(
             username=str(config.get(CONF_USERNAME) or "") or None,
             password=str(config.get(CONF_PASSWORD) or "") or None,
             timeout=timeout,
+            language=language,
             meta=meta,
         )
     except SearxngError as err:
@@ -139,10 +149,11 @@ async def execute_search(
         raise HomeAssistantError(f"搜索时发生内部错误：{err}") from err
 
     _LOGGER.debug(
-        "SearXNG 搜索完成：query=%r 地址=%r 耗时=%.1f 秒 结果=%d 条 "
+        "SearXNG 搜索完成：query=%r 地址=%r 语言=%r 耗时=%.1f 秒 结果=%d 条 "
         "unresponsive_engines=%r number_of_results=%r",
         query,
         base_url,
+        language,
         time.monotonic() - started,
         len(items),
         meta.get("unresponsive_engines"),

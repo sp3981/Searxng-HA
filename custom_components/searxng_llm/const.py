@@ -11,6 +11,7 @@ CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_RESULTS = "results"
 CONF_TIMEOUT = "timeout"
+CONF_LANGUAGE = "language"
 CONF_QUERY = "query"
 
 # 服务名：searxng_llm.search，供 Extended OpenAI Conversation 等
@@ -19,6 +20,10 @@ SERVICE_SEARCH = "search"
 
 DEFAULT_RESULTS = 5
 DEFAULT_TIMEOUT = 15
+
+# SearXNG /search 接口的 language 参数：auto=自动识别查询语言，
+# all=全部语言，也可以填具体语言代码，如 zh-CN、zh、en-US、en
+DEFAULT_LANGUAGE = "auto"
 
 # LLM 工具的名称与描述（描述会直接交给大模型，引导模型在需要实时信息时调用）
 TOOL_NAME = "searxng_search"

@@ -9,11 +9,13 @@
           "base_url": "SearXNG 地址",
           "username": "用户名（可选）",
           "password": "密码（可选）",
+          "language": "搜索语言",
           "results": "返回结果条数",
           "timeout": "超时时间（秒）"
         },
         "data_description": {
-          "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。"
+          "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。",
+          "language": "SearXNG 的 language 参数：auto=自动识别查询语言、all=全部语言，也可填语言代码，如 zh-CN、zh、en-US、en。"
         }
       }
     },
@@ -37,11 +39,13 @@
           "base_url": "SearXNG 地址",
           "username": "用户名（可选）",
           "password": "密码（可选）",
+          "language": "搜索语言",
           "results": "返回结果条数",
           "timeout": "超时时间（秒）"
         },
         "data_description": {
-          "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。"
+          "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。",
+          "language": "SearXNG 的 language 参数：auto=自动识别查询语言、all=全部语言，也可填语言代码，如 zh-CN、zh、en-US、en。"
         }
       }
     },
