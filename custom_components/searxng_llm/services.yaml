@@ -1,0 +1,11 @@
+search:
+  name: SearXNG 搜索
+  description: 调用 SearXNG JSON 接口执行联网搜索，返回结果的标题、链接与摘要。
+  fields:
+    query:
+      name: 搜索关键词
+      description: 要搜索的关键词或问题。
+      required: true
+      example: home assistant 最新版本
+      selector:
+        text: {}

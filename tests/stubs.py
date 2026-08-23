@@ -67,7 +67,37 @@ class HomeAssistant:
     """HomeAssistant 桩。"""
 
 
+def _callback(fn: Any) -> Any:
+    """callback 装饰器桩：原样返回函数。"""
+    return fn
+
+
+class ServiceCall:
+    """homeassistant.core.ServiceCall 桩。"""
+
+    def __init__(self, hass: Any = None, data: dict[str, Any] | None = None) -> None:
+        self.hass = hass
+        self.data = data or {}
+        self.context = None
+        self.return_response = False
+
+
+ServiceResponse = dict
+
+
+class SupportsResponse:
+    """homeassistant.core.SupportsResponse 桩。"""
+
+    NONE = 0
+    OPTIONAL = 1
+    ONLY = 2
+
+
 _core.HomeAssistant = HomeAssistant
+_core.callback = _callback
+_core.ServiceCall = ServiceCall
+_core.ServiceResponse = ServiceResponse
+_core.SupportsResponse = SupportsResponse
 sys.modules["homeassistant.core"] = _core
 
 _config_entries = types.ModuleType("homeassistant.config_entries")
@@ -89,6 +119,32 @@ sys.modules["homeassistant.config_entries"] = _config_entries
 _helpers = types.ModuleType("homeassistant.helpers")
 _helpers.__path__ = []
 sys.modules["homeassistant.helpers"] = _helpers
+
+# HA 2026.8+ 把 LLM 基类搬到 helpers.llm，新架构分支需要这些桩
+_helpers_llm = types.ModuleType("homeassistant.helpers.llm")
+
+
+class NewStyleTool:
+    """helpers.llm.Tool 桩：子类以类属性声明 name/description/parameters。"""
+
+
+class NewStyleToolInput:
+    """helpers.llm.ToolInput 桩。"""
+
+    def __init__(self, tool_name: str, tool_args: dict[str, Any], tool_id: str = "") -> None:
+        self.tool_name = tool_name
+        self.tool_args = tool_args
+        self.id = tool_id
+
+
+class NewStyleLLMContext:
+    """helpers.llm.LLMContext 桩。"""
+
+
+_helpers_llm.Tool = NewStyleTool
+_helpers_llm.ToolInput = NewStyleToolInput
+_helpers_llm.LLMContext = NewStyleLLMContext
+sys.modules["homeassistant.helpers.llm"] = _helpers_llm
 
 _aiohttp_client = types.ModuleType("homeassistant.helpers.aiohttp_client")
 _current_session: Any = None

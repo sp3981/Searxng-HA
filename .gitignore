@@ -16,3 +16,6 @@ venv/
 
 # 本地 Home Assistant 配置
 config/
+
+# 临时参考源码（排查兼容性时下载，不进入仓库）
+.ref-*/

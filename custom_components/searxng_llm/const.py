@@ -11,6 +11,11 @@ CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
 CONF_RESULTS = "results"
 CONF_TIMEOUT = "timeout"
+CONF_QUERY = "query"
+
+# 服务名：searxng_llm.search，供 Extended OpenAI Conversation 等
+# 不消费 HA LLM 工具 API 的对话代理通过 script 函数调用
+SERVICE_SEARCH = "search"
 
 DEFAULT_RESULTS = 5
 DEFAULT_TIMEOUT = 15
