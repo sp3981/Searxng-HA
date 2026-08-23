@@ -55,6 +55,7 @@ async def search(
     username: str | None = None,
     password: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
+    meta: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     """调用 SearXNG 的 JSON 接口搜索，返回前 ``results`` 条结果。
 
@@ -125,6 +126,10 @@ async def search(
             "SearXNG 返回的数据缺少 results 字段，请确认已启用 format=json 输出。",
             code=ERROR_INVALID_RESPONSE,
         )
+
+    if meta is not None:
+        meta["unresponsive_engines"] = data.get("unresponsive_engines")
+        meta["number_of_results"] = data.get("number_of_results")
 
     items: list[dict[str, str]] = []
     for item in data["results"][:results]:

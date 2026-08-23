@@ -111,6 +111,7 @@ async def execute_search(
         raise HomeAssistantError("尚未配置 SearXNG 地址，请先在集成设置中填写。")
     results, timeout = _parse_settings(config)
     started = time.monotonic()
+    meta: dict = {}
 
     try:
         items = await search(
@@ -121,6 +122,7 @@ async def execute_search(
             username=str(config.get(CONF_USERNAME) or "") or None,
             password=str(config.get(CONF_PASSWORD) or "") or None,
             timeout=timeout,
+            meta=meta,
         )
     except SearxngError as err:
         _LOGGER.warning(
@@ -137,10 +139,14 @@ async def execute_search(
         raise HomeAssistantError(f"搜索时发生内部错误：{err}") from err
 
     _LOGGER.debug(
-        "SearXNG 搜索完成：query=%r 耗时=%.1f 秒 结果=%d 条",
+        "SearXNG 搜索完成：query=%r 地址=%r 耗时=%.1f 秒 结果=%d 条 "
+        "unresponsive_engines=%r number_of_results=%r",
         query,
+        base_url,
         time.monotonic() - started,
         len(items),
+        meta.get("unresponsive_engines"),
+        meta.get("number_of_results"),
     )
     return items
 

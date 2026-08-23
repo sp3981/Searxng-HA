@@ -56,6 +56,20 @@ class ToolSearchTests(unittest.IsolatedAsyncioTestCase):
         session = FakeSession(FakeResponse(200, {"results": []}))
         self.assertEqual(await search(session, "https://s.example", "q"), [])
 
+    async def test_search_captures_unresponsive_engines_in_meta(self):
+        """meta 字典接收 unresponsive_engines 等诊断信息。"""
+        payload = {
+            "results": [],
+            "unresponsive_engines": [["google", "验证码"], ["baidu", "超时"]],
+            "number_of_results": 0,
+        }
+        session = FakeSession(FakeResponse(200, payload))
+        meta: dict = {}
+        items = await search(session, "https://s.example", "q", meta=meta)
+        self.assertEqual(items, [])
+        self.assertEqual(meta["unresponsive_engines"], payload["unresponsive_engines"])
+        self.assertEqual(meta["number_of_results"], 0)
+
     async def test_401_maps_to_invalid_auth(self):
         """HTTP 401 → invalid_auth，中文提示。"""
         session = FakeSession(FakeResponse(401, "Unauthorized", "text/html"))
