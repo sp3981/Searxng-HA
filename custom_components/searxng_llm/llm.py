@@ -33,6 +33,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .const import (
     API_NAME,
     CONF_BASE_URL,
+    CONF_FETCH_CHARS,
     CONF_FETCH_COUNT,
     CONF_FETCH_PARALLEL,
     CONF_FETCH_TIMEOUT,
@@ -42,6 +43,7 @@ from .const import (
     CONF_SEARCH_PARALLEL,
     CONF_TIMEOUT,
     CONF_USERNAME,
+    DEFAULT_FETCH_CHARS,
     DEFAULT_FETCH_COUNT,
     DEFAULT_FETCH_PARALLEL,
     DEFAULT_FETCH_TIMEOUT,
@@ -95,11 +97,11 @@ def _first_configured_entry(hass: HomeAssistant) -> ConfigEntry | None:
 
 def _parse_settings(
     config: dict[str, Any],
-) -> tuple[int, int, str, int, int, int, int]:
+) -> tuple[int, int, str, int, int, int, int, int]:
     """解析搜索与抓取参数（非法/越界值回退默认）。
 
     返回 (results, timeout, language, fetch_count, fetch_parallel,
-    fetch_timeout, search_parallel)。
+    fetch_timeout, search_parallel, fetch_chars)。
     """
 
     def _int(key: str, default: int, low: int, high: int) -> int:
@@ -117,6 +119,7 @@ def _parse_settings(
         _int(CONF_FETCH_PARALLEL, DEFAULT_FETCH_PARALLEL, 1, 10),
         _int(CONF_FETCH_TIMEOUT, DEFAULT_FETCH_TIMEOUT, 3, 60),
         _int(CONF_SEARCH_PARALLEL, DEFAULT_SEARCH_PARALLEL, 1, 10),
+        _int(CONF_FETCH_CHARS, DEFAULT_FETCH_CHARS, 200, 20000),
     )
 
 
@@ -152,6 +155,7 @@ async def execute_search(
         fetch_parallel,
         fetch_timeout,
         search_parallel,
+        fetch_chars,
     ) = _parse_settings(config)
     if language is None:
         language = language_configured
@@ -205,7 +209,7 @@ async def execute_search(
     if items and fetch_count > 0:
         fetch_started = time.monotonic()
         items = await _fetch_pages(
-            session, hass, items, fetch_count, fetch_parallel, fetch_timeout
+            session, hass, items, fetch_count, fetch_parallel, fetch_timeout, fetch_chars
         )
         fetched_ok = sum(1 for item in items if item.get("fetched_content"))
         fetched_failed = sum(1 for item in items if item.get("fetch_error"))
@@ -242,6 +246,7 @@ async def _fetch_pages(
     fetch_count: int,
     fetch_parallel: int,
     fetch_timeout: int,
+    max_chars: int = DEFAULT_FETCH_CHARS,
 ) -> list[dict[str, str]]:
     """并行抓取前 ``fetch_count`` 条结果的网页正文。
 
@@ -256,7 +261,9 @@ async def _fetch_pages(
             return item
         try:
             async with fetch_sem or nullcontext():
-                text = await fetch_url(session, url, timeout=fetch_timeout)
+                text = await fetch_url(
+                    session, url, timeout=fetch_timeout, max_chars=max_chars
+                )
         except SearxngError as err:
             item["fetch_error"] = str(err)
         except Exception as err:  # 单条抓取的未知异常只记录，不崩溃
@@ -287,7 +294,7 @@ async def execute_fetch(
     if entry is None:
         raise HomeAssistantError("SearXNG 联网搜索尚未配置，请先在集成中添加实例。")
     config = merged_config(entry)
-    _, _, _, _, fetch_parallel, fetch_timeout, _ = _parse_settings(config)
+    _, _, _, _, fetch_parallel, fetch_timeout, _, fetch_chars = _parse_settings(config)
 
     if isinstance(url_or_urls, str):
         urls = [url_or_urls.strip()]
@@ -305,7 +312,9 @@ async def execute_fetch(
             return {"url": url, "error": "仅支持 http/https 网页地址。"}
         try:
             async with fetch_sem or nullcontext():
-                text = await fetch_url(session, url, timeout=fetch_timeout)
+                text = await fetch_url(
+                    session, url, timeout=fetch_timeout, max_chars=fetch_chars
+                )
         except SearxngError as err:
             return {"url": url, "error": str(err)}
         except Exception as err:  # 单条抓取的未知异常只记录，不崩溃

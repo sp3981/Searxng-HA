@@ -25,6 +25,7 @@ from stubs import (
 
 from custom_components.searxng_llm.const import (
     CONF_BASE_URL,
+    CONF_FETCH_CHARS,
     CONF_FETCH_COUNT,
     CONF_LANGUAGE,
     CONF_RESULTS,
@@ -185,6 +186,23 @@ class SearxngPlatformTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["url"], "https://a.example/article")
         self.assertEqual(result["results"][0]["content"], "正文。")
+
+    async def test_fetch_tool_call_respects_char_limit(self):
+        """抓取内容上限配置在新架构工具中同样生效。"""
+        html = "<html><body><p>" + "汉" * 500 + "</p></body></html>"
+        session = FakeSession(FakeResponse(200, html, "text/html"))
+        set_session(session)
+        entry = _entry_with_base_url("https://searx.example.com")
+        entry.data[CONF_FETCH_CHARS] = 300
+        tool = self.module.SearxngFetchTool()
+        result = await tool.async_call(
+            _FakeHass([entry]),
+            NewStyleToolInput(TOOL_FETCH_NAME, {"url": "https://a.example/article"}),
+            NewStyleLLMContext(),
+        )
+        content = result["results"][0]["content"]
+        self.assertLessEqual(len(content), 300)
+        self.assertGreater(len(content), 0)
 
     async def test_fetch_tool_call_empty_url_raises_chinese_error(self):
         """空地址抛中文 HomeAssistantError。"""

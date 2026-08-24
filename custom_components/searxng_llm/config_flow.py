@@ -21,6 +21,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_BASE_URL,
+    CONF_FETCH_CHARS,
     CONF_FETCH_COUNT,
     CONF_FETCH_PARALLEL,
     CONF_FETCH_TIMEOUT,
@@ -30,6 +31,7 @@ from .const import (
     CONF_SEARCH_PARALLEL,
     CONF_TIMEOUT,
     CONF_USERNAME,
+    DEFAULT_FETCH_CHARS,
     DEFAULT_FETCH_COUNT,
     DEFAULT_FETCH_PARALLEL,
     DEFAULT_FETCH_TIMEOUT,
@@ -47,6 +49,24 @@ from .tool import SearxngError, search
 _LOGGER = logging.getLogger(__name__)
 
 INVALID_URL = "invalid_url"
+
+
+# 搜索语言下拉选项：value 传给 SearXNG language 参数，label 用中文显示
+LANGUAGE_OPTIONS = [
+    {"value": "auto", "label": "自动识别（auto）"},
+    {"value": "all", "label": "全部语言（all）"},
+    {"value": "zh-CN", "label": "简体中文（zh-CN）"},
+    {"value": "zh-TW", "label": "繁體中文（zh-TW）"},
+    {"value": "zh", "label": "中文（zh）"},
+    {"value": "en-US", "label": "英语（美国，en-US）"},
+    {"value": "en", "label": "英语（en）"},
+    {"value": "ja-JP", "label": "日语（ja-JP）"},
+    {"value": "ko-KR", "label": "韩语（ko-KR）"},
+    {"value": "fr-FR", "label": "法语（fr-FR）"},
+    {"value": "de-DE", "label": "德语（de-DE）"},
+    {"value": "es-ES", "label": "西班牙语（es-ES）"},
+    {"value": "ru-RU", "label": "俄语（ru-RU）"},
+]
 
 
 def _normalize_base_url(value: str) -> str:
@@ -82,8 +102,11 @@ def _build_schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
             ),
             vol.Optional(
                 CONF_LANGUAGE, default=values.get(CONF_LANGUAGE, DEFAULT_LANGUAGE)
-            ): selector.TextSelector(
-                selector.TextSelectorConfig(type=selector.TextSelectorType.TEXT)
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=LANGUAGE_OPTIONS,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
             ),
             vol.Required(
                 CONF_RESULTS, default=values.get(CONF_RESULTS, DEFAULT_RESULTS)
@@ -107,6 +130,10 @@ def _build_schema(defaults: Mapping[str, Any] | None = None) -> vol.Schema:
                 CONF_FETCH_TIMEOUT,
                 default=values.get(CONF_FETCH_TIMEOUT, DEFAULT_FETCH_TIMEOUT),
             ): vol.All(vol.Coerce(int), vol.Range(min=3, max=60)),
+            vol.Required(
+                CONF_FETCH_CHARS,
+                default=values.get(CONF_FETCH_CHARS, DEFAULT_FETCH_CHARS),
+            ): vol.All(vol.Coerce(int), vol.Range(min=200, max=20000)),
         }
     )
 
@@ -190,6 +217,9 @@ class SearxngConfigFlow(ConfigFlow, domain=DOMAIN):
                                 user_input.get(
                                     CONF_FETCH_TIMEOUT, DEFAULT_FETCH_TIMEOUT
                                 )
+                            ),
+                            CONF_FETCH_CHARS: int(
+                                user_input.get(CONF_FETCH_CHARS, DEFAULT_FETCH_CHARS)
                             ),
                         },
                     )

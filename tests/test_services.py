@@ -13,6 +13,7 @@ from stubs import ConfigEntry, FakeResponse, FakeSession, ServiceCall, set_sessi
 component_init = importlib.import_module("custom_components.searxng_llm")
 from custom_components.searxng_llm.const import (
     CONF_BASE_URL,
+    CONF_FETCH_CHARS,
     CONF_FETCH_COUNT,
     CONF_RESULTS,
     CONF_TIMEOUT,
@@ -133,6 +134,20 @@ class FetchServiceTests(unittest.IsolatedAsyncioTestCase):
         result = await component_init._handle_fetch(call)
         self.assertEqual(result["urls"], ["https://a.example/article"])
         self.assertEqual(result["results"][0]["content"], "正文内容。")
+
+    async def test_fetch_chars_limit_configured(self):
+        """服务路径同样应用抓取内容上限。"""
+        html = "<html><body><p>" + "汉" * 500 + "</p></body></html>"
+        session = FakeSession(FakeResponse(200, html, "text/html"))
+        set_session(session)
+        entry = _entry()
+        entry.data[CONF_FETCH_CHARS] = 300
+        call = ServiceCall(_FakeHass([entry]), {"url": "https://a.example/article"})
+        call.return_response = True
+        result = await component_init._handle_fetch(call)
+        content = result["results"][0]["content"]
+        self.assertLessEqual(len(content), 300)
+        self.assertGreater(len(content), 0)
 
     async def test_parallel_urls_fetched(self):
         """url 列表：并行抓取多个网页。"""

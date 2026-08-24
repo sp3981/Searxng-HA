@@ -15,15 +15,17 @@
           "search_parallel": "并行搜索数量",
           "fetch_count": "自动抓取条数",
           "fetch_parallel": "并行抓取数量",
-          "fetch_timeout": "抓取超时时间（秒）"
+          "fetch_timeout": "抓取超时时间（秒）",
+            "fetch_chars": "抓取内容上限（字符）"
         },
         "data_description": {
           "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。",
-          "language": "SearXNG 的 language 参数：auto=自动识别查询语言、all=全部语言，也可填语言代码，如 zh-CN、zh、en-US、en。",
+          "language": "搜索语言（下拉选择）：auto=自动识别、all=全部语言，以及常用语言代码（zh-CN、zh-TW、en-US、ja-JP 等）。",
           "search_parallel": "同时向 SearXNG 发起的搜索请求上限（1–10）。",
           "fetch_count": "搜索后自动抓取前几条结果的网页正文（0=不自动抓取，由 AI 按需调用「抓取网页」工具智能决定抓哪些链接，1–10）。",
           "fetch_parallel": "同时抓取网页的数量上限（1–10）。",
-          "fetch_timeout": "单个网页抓取的超时秒数（3–60）。"
+          "fetch_timeout": "单个网页抓取的超时秒数（3–60）。",
+            "fetch_chars": "抓取单个网页返回给模型的最大字符数（200–20000），超出部分截断。"
         }
       }
     },
@@ -53,15 +55,17 @@
           "search_parallel": "并行搜索数量",
           "fetch_count": "自动抓取条数",
           "fetch_parallel": "并行抓取数量",
-          "fetch_timeout": "抓取超时时间（秒）"
+          "fetch_timeout": "抓取超时时间（秒）",
+            "fetch_chars": "抓取内容上限（字符）"
         },
         "data_description": {
           "base_url": "SearXNG 实例根地址，例如 https://searx.example.com，不要带 /search 路径。",
-          "language": "SearXNG 的 language 参数：auto=自动识别查询语言、all=全部语言，也可填语言代码，如 zh-CN、zh、en-US、en。",
+          "language": "搜索语言（下拉选择）：auto=自动识别、all=全部语言，以及常用语言代码（zh-CN、zh-TW、en-US、ja-JP 等）。",
           "search_parallel": "同时向 SearXNG 发起的搜索请求上限（1–10）。",
           "fetch_count": "搜索后自动抓取前几条结果的网页正文（0=不自动抓取，由 AI 按需调用「抓取网页」工具智能决定抓哪些链接，1–10）。",
           "fetch_parallel": "同时抓取网页的数量上限（1–10）。",
-          "fetch_timeout": "单个网页抓取的超时秒数（3–60）。"
+          "fetch_timeout": "单个网页抓取的超时秒数（3–60）。",
+            "fetch_chars": "抓取单个网页返回给模型的最大字符数（200–20000），超出部分截断。"
         }
       }
     },

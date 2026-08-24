@@ -16,6 +16,7 @@ from stubs import (
 from custom_components.searxng_llm import llm as component_llm
 from custom_components.searxng_llm.const import (
     CONF_BASE_URL,
+    CONF_FETCH_CHARS,
     CONF_FETCH_COUNT,
     CONF_FETCH_PARALLEL,
     CONF_FETCH_TIMEOUT,
@@ -164,6 +165,19 @@ class SearxngLLMTests(unittest.IsolatedAsyncioTestCase):
         result = await tool.llm_func({"url": "https://a.example/article"})
         self.assertEqual(result.serialized_result["url"], "https://a.example/article")
         self.assertEqual(result.serialized_result["results"][0]["content"], "正文内容。")
+
+    async def test_fetch_chars_limit_configured(self):
+        """抓取内容上限配置生效（超长正文被截断）。"""
+        html = "<html><body><p>" + "汉" * 500 + "</p></body></html>"
+        session = FakeSession(FakeResponse(200, html, "text/html"))
+        set_session(session)
+        api = _make_api({CONF_FETCH_CHARS: 300})
+        instance = await api.async_get_api_instance(LLMContext())
+        tool = (await instance.async_get_tools())[1]
+        result = await tool.llm_func({"url": "https://a.example/article"})
+        content = result.serialized_result["results"][0]["content"]
+        self.assertLessEqual(len(content), 300)
+        self.assertGreater(len(content), 0)
 
     async def test_fetch_tool_failure_returns_error_without_crashing(self):
         """单条抓取失败返回 error 字段，不崩溃。"""
